@@ -1,15 +1,15 @@
 {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "icon": "🌫️",
-  "title": "Jordan Dust & Fog",
-  "description": "Experimental GEOS-FP dust guidance for Jordan. Fog and satellite integration pending.",
+  "title": "Global Dust & Fog",
+  "description": "Experimental global GEOS-FP dust overview. Fog and satellite integration pending.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792238717889,
-  "builtReadable": "2026-10-17T12:05:17.889Z"
+  "built": 1792241651711,
+  "builtReadable": "2026-10-17T12:54:11.711Z"
 }

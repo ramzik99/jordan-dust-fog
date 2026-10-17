@@ -1,17 +1,17 @@
 const __pluginConfig =  {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "icon": "🌫️",
-  "title": "Jordan Dust & Fog",
-  "description": "Experimental GEOS-FP dust guidance for Jordan. Fog and satellite integration pending.",
+  "title": "Global Dust & Fog",
+  "description": "Experimental global GEOS-FP dust overview. Fog and satellite integration pending.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792238717870,
-  "builtReadable": "2026-10-17T12:05:17.870Z"
+  "built": 1792241651683,
+  "builtReadable": "2026-10-17T12:54:11.683Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -187,6 +187,11 @@ function listen(node, event, handler, options) {
 function attr(node, attribute, value) {
 	if (value == null) node.removeAttribute(attribute);
 	else if (node.getAttribute(attribute) !== value) node.setAttribute(attribute, value);
+}
+
+/** @returns {number} */
+function to_number(value) {
+	return value === '' ? null : +value;
 }
 
 /**
@@ -687,7 +692,7 @@ function increasing(values) {
   return Array.isArray(values) && values.length > 0 && values.every((v, i) =>
     Number.isFinite(v) && (i === 0 || v > values[i - 1]));
 }
-function validateForecast(data, now = Date.now()) {
+function validateForecast(data, now = Date.now(), checkExpiry = true) {
   if (!data || data.schemaVersion !== 1 || data.source !== 'NASA GEOS-FP') throw Error('Unsupported forecast format');
   if (!validDate(data.runTime) || !validDate(data.retrievedAt)) throw Error('Invalid source timestamps');
   const run = Date.parse(data.runTime);
@@ -697,7 +702,7 @@ function validateForecast(data, now = Date.now()) {
   if (data.latitudes[0] < -90 || data.latitudes.at(-1) > 90 || data.longitudes[0] < -180 || data.longitudes.at(-1) > 180) throw Error('Invalid coordinates');
   if (data.units?.dustSurface !== 'ug m-3' || data.units?.dustFine !== 'ug m-3' || data.units?.dustAod !== '1') throw Error('Unexpected units');
   if (!Array.isArray(data.frames) || !data.frames.length || data.frames.length > 100) throw Error('Invalid forecast frames');
-  if (data.latitudes.length * data.longitudes.length > 10000) throw Error('Forecast grid exceeds regional limit');
+  if (data.latitudes.length * data.longitudes.length > 50000) throw Error('Forecast grid exceeds size limit');
   let lastEnd = -Infinity;
   for (const f of data.frames) {
     if (![f.start, f.end, f.validTime].every(validDate)) throw Error('Invalid frame times');
@@ -710,7 +715,7 @@ function validateForecast(data, now = Date.now()) {
           row.some(v => v !== null && (!Number.isFinite(v) || v < 0)))) throw Error('Invalid field: ' + key);
     }
   }
-  if (lastEnd <= now) throw Error('Forecast has expired');
+  if (checkExpiry && lastEnd <= now) throw Error('Forecast has expired');
   return data;
 }
 function frameAt(data, timestamp) {
@@ -720,9 +725,12 @@ function frameAt(data, timestamp) {
 function samplePoint(data, frame, lat, lon) {
   if (!frame || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   const ys = data.latitudes, xs = data.longitudes;
-  if (lat < ys[0] || lat > ys.at(-1) || lon < xs[0] || lon > xs.at(-1)) return null;
+  const global = data.coverage === 'global';
+  if (global) lon = wrapLongitude(lon);
+  if (lat < ys[0] || lat > ys.at(-1) || (!global && (lon < xs[0] || lon > xs.at(-1)))) return null;
   const nearest = (a, value) => a.reduce((best, v, i) => Math.abs(v - value) < Math.abs(a[best] - value) ? i : best, 0);
-  const y = nearest(ys, lat), x = nearest(xs, lon);
+  const y = nearest(ys, lat);
+  const x = global ? xs.reduce((best, v, i) => Math.abs(wrapLongitude(v - lon)) < Math.abs(wrapLongitude(xs[best] - lon)) ? i : best, 0) : nearest(xs, lon);
   return { lat: ys[y], lon: xs[x], ...Object.fromEntries(FIELDS.map(k => [k, frame[k][y][x]])) };
 }
 // Display bins only: not visibility thresholds, health limits or calibrated warning levels.
@@ -735,25 +743,119 @@ function dustColor(value) {
   return DUST_BINS.findLast(b => value >= b.min).color;
 }
 
+function wrapLongitude(value) {
+  return ((value + 180) % 360 + 360) % 360 - 180;
+}
+
+function validateManifest(data, now = Date.now()) {
+  if (data?.schemaVersion !== 2 || data.coverage !== 'global' || data.source !== 'NASA GEOS-FP') throw Error('Unsupported global manifest');
+  if (!validDate(data.runTime) || !validDate(data.retrievedAt)) throw Error('Invalid source timestamps');
+  const run = Date.parse(data.runTime);
+  if (run > now + 3600000 || now - run > MAX_RUN_AGE_MS) throw Error('GEOS forecast run is stale or invalid');
+  if (Date.parse(data.retrievedAt) < run || Date.parse(data.retrievedAt) > now + 3600000) throw Error('Invalid retrieval time');
+  if (data.units?.dustSurface !== 'ug m-3' || data.units?.dustFine !== 'ug m-3' || data.units?.dustAod !== '1') throw Error('Unexpected units');
+  const ys = data.latitudes, xs = data.longitudes;
+  if (!increasing(ys) || !increasing(xs) || ys.length !== 145 || xs.length !== 288 || ys[0] !== -90 || ys.at(-1) !== 90 || xs[0] !== -180 || xs.at(-1) !== 178.75 ||
+      ys.some((v, i) => i > 0 && Math.abs(v - ys[i - 1] - 1.25) > 1e-6) || xs.some((v, i) => i > 0 && Math.abs(v - xs[i - 1] - 1.25) > 1e-6) ||
+      data.sampling?.latitudeDegrees !== 1.25 || data.sampling?.longitudeDegrees !== 1.25) throw Error('Invalid global sampling grid');
+  if (!Array.isArray(data.frames) || !data.frames.length || data.frames.length > 100) throw Error('Invalid forecast frames');
+  let lastEnd = -Infinity;
+  const paths = new Set();
+  const token = data.runTime.slice(0, 10).replaceAll('-', '') + '_' + data.runTime.slice(11, 13);
+  for (const f of data.frames) {
+    if (![f.start, f.end, f.validTime].every(validDate)) throw Error('Invalid frame times');
+    const start = Date.parse(f.start), end = Date.parse(f.end);
+    if (start < run || start < lastEnd || end - start !== 10800000 || Date.parse(f.validTime) !== (start + end) / 2) throw Error('Invalid or overlapping averaging intervals');
+    const stamp = f.validTime.replaceAll('-', '').replaceAll(':', '');
+    if (f.path !== `runs/${token}/${stamp}.json.gz` || paths.has(f.path)) throw Error('Invalid forecast path');
+    paths.add(f.path); lastEnd = end;
+  }
+  if (lastEnd <= now) throw Error('Forecast has expired');
+  return data;
+}
+
+function validateFrame(frame, manifest, descriptor, now = Date.now()) {
+  validateManifest(manifest, now);
+  if (!manifest.frames.some(f => f.path === descriptor?.path && f.validTime === descriptor.validTime)) throw Error('Unrecognised forecast interval');
+  if (frame?.schemaVersion !== 2 || frame.source !== manifest.source || frame.runTime !== manifest.runTime ||
+      ['start', 'end', 'validTime'].some(k => frame[k] !== descriptor[k])) throw Error('Forecast frame does not match manifest');
+  validateForecast({ ...manifest, schemaVersion: 1, frames: [frame] }, now, false);
+  return frame;
+}
+
+async function decodeFrameResponse(response) {
+  if (typeof DecompressionStream === 'undefined') throw Error('This browser does not support compressed forecast files');
+  const compressed = new Uint8Array(await response.arrayBuffer());
+  if (compressed.byteLength > 2 * 1024 * 1024) throw Error('Compressed forecast exceeds size limit');
+  const reader = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const parts = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      size += value.byteLength;
+      if (size > 8 * 1024 * 1024) throw Error('Decoded forecast exceeds size limit');
+      parts.push(value);
+    }
+  } finally { await reader.cancel(); }
+  const joined = new Uint8Array(size); let offset = 0;
+  for (const part of parts) { joined.set(part, offset); offset += part.byteLength; }
+  return JSON.parse(new TextDecoder().decode(joined));
+}
+
+const clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
+function worldCopies(west, east) {
+  if (![west, east].every(Number.isFinite) || east < west) return [];
+  const middle = Math.floor(((west + east) / 2 + 180) / 360);
+  const lo = Math.max(middle - 3, Math.floor((west + 180) / 360) - 1);
+  const hi = Math.min(middle + 3, Math.floor((east + 180) / 360) + 1);
+  return Array.from({ length: Math.max(0, hi - lo + 1) }, (_, i) => (lo + i) * 360);
+}
+function drawGlobalGrid(ctx, map, manifest, frame, width, height) {
+  ctx.clearRect(0, 0, width, height);
+  if (!manifest || !frame) return;
+  const ys = manifest.latitudes, xs = manifest.longitudes, half = 0.625;
+  const b = map.getBounds();
+  const rows = ys.map(lat => [map.latLngToContainerPoint([clampLat(lat + half), 0]).y,
+    map.latLngToContainerPoint([clampLat(lat - half), 0]).y]);
+  ctx.globalAlpha = 0.48;
+  for (const offset of worldCopies(b.getWest(), b.getEast())) {
+    const columns = xs.map(lon => [map.latLngToContainerPoint([0, lon + offset - half]).x,
+      map.latLngToContainerPoint([0, lon + offset + half]).x]);
+    for (let y = 0; y < ys.length; y++) {
+      const [top, bottom] = rows[y];
+      if (top > height || bottom < 0 || bottom <= top) continue;
+      for (let x = 0; x < xs.length; x++) {
+        const [left, right] = columns[x];
+        if (left > width || right < 0 || right <= left) continue;
+        const color = dustColor(frame.dustSurface[y][x]);
+        if (!color) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect(Math.max(0, left), Math.max(0, top), Math.min(width, right) - Math.max(0, left), Math.min(height, bottom) - Math.max(0, top));
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 /* src/pluginEntry.svelte generated by Svelte v4.2.20 */
 
 function add_css(target) {
-	append_styles(target, "svelte-l83tf1", ".panel.svelte-l83tf1.svelte-l83tf1,.restore.svelte-l83tf1.svelte-l83tf1{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-l83tf1.svelte-l83tf1{width:290px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-l83tf1.svelte-l83tf1{padding:12px}header.svelte-l83tf1.svelte-l83tf1{display:flex;justify-content:space-between;gap:10px}header.svelte-l83tf1 strong.svelte-l83tf1{font-size:17px}small.svelte-l83tf1.svelte-l83tf1{display:block;font-size:11px;color:#bbcad6}button.svelte-l83tf1.svelte-l83tf1,select.svelte-l83tf1.svelte-l83tf1{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 8px;cursor:pointer}button.svelte-l83tf1.svelte-l83tf1:disabled{opacity:.5;cursor:default}button.svelte-l83tf1.svelte-l83tf1:focus-visible,select.svelte-l83tf1.svelte-l83tf1:focus-visible{outline:2px solid #f9a825;outline-offset:2px}.controls.svelte-l83tf1.svelte-l83tf1{display:flex;align-items:center;justify-content:space-between;margin:14px 0;gap:5px}label.svelte-l83tf1.svelte-l83tf1{display:flex;align-items:center;gap:4px}.place.svelte-l83tf1.svelte-l83tf1{justify-content:space-between;margin-bottom:5px}.reading.svelte-l83tf1.svelte-l83tf1{background:#21384a;border-radius:10px;padding:12px;margin:12px 0}.reading.svelte-l83tf1>strong.svelte-l83tf1{display:block;font-size:28px}.reading.svelte-l83tf1 strong small.svelte-l83tf1{display:inline;font-size:14px}.reading.svelte-l83tf1 span.svelte-l83tf1{font-size:12px}dl.svelte-l83tf1.svelte-l83tf1{margin:10px 0}dl.svelte-l83tf1>div.svelte-l83tf1{display:flex;justify-content:space-between;gap:8px;margin:5px 0}dt.svelte-l83tf1.svelte-l83tf1{font-size:11px;color:#bbcad6}dd.svelte-l83tf1.svelte-l83tf1{margin:0;font-size:12px}.legend.svelte-l83tf1.svelte-l83tf1{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:14px 0 3px}.legend.svelte-l83tf1 span.svelte-l83tf1{border-top:7px solid var(--color);padding-top:3px;font-size:10px}.pending.svelte-l83tf1.svelte-l83tf1{display:grid;grid-template-columns:1fr auto;gap:6px;border-top:1px solid #42586b;margin-top:12px;padding-top:12px;font-size:12px}.pending.svelte-l83tf1 span.svelte-l83tf1{color:#bbcad6}.error.svelte-l83tf1.svelte-l83tf1{background:#692f30;padding:9px;border-radius:7px;font-size:12px}details.svelte-l83tf1.svelte-l83tf1{margin-top:12px}summary.svelte-l83tf1.svelte-l83tf1{cursor:pointer;font-size:12px}details.svelte-l83tf1 p.svelte-l83tf1{font-size:11px;color:#bbcad6}a.svelte-l83tf1.svelte-l83tf1{color:#ffd486}.timeline.svelte-l83tf1.svelte-l83tf1{display:flex;gap:5px;flex-wrap:wrap;max-height:180px;overflow:auto;margin-top:8px}.timeline.svelte-l83tf1 button.svelte-l83tf1{font-size:10px}.timeline.svelte-l83tf1 .active.svelte-l83tf1{border-color:#f9a825}footer.svelte-l83tf1.svelte-l83tf1{font-size:10px;color:#bbcad6;border-top:1px solid #42586b;margin-top:12px;padding-top:8px}@media(max-width:600px){.panel.svelte-l83tf1.svelte-l83tf1{bottom:100px;width:270px;max-height:55dvh}.restore.svelte-l83tf1.svelte-l83tf1{bottom:100px}}");
+	append_styles(target, "svelte-1poqr3u", ".panel.svelte-1poqr3u.svelte-1poqr3u,.restore.svelte-1poqr3u.svelte-1poqr3u{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-1poqr3u.svelte-1poqr3u{width:290px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-1poqr3u.svelte-1poqr3u{padding:12px}header.svelte-1poqr3u.svelte-1poqr3u{display:flex;justify-content:space-between;gap:10px}header.svelte-1poqr3u strong.svelte-1poqr3u{font-size:17px}small.svelte-1poqr3u.svelte-1poqr3u{display:block;font-size:11px;color:#bbcad6}button.svelte-1poqr3u.svelte-1poqr3u,select.svelte-1poqr3u.svelte-1poqr3u{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 8px;cursor:pointer}button.svelte-1poqr3u.svelte-1poqr3u:disabled{opacity:.5;cursor:default}button.svelte-1poqr3u.svelte-1poqr3u:focus-visible,select.svelte-1poqr3u.svelte-1poqr3u:focus-visible{outline:2px solid #f9a825;outline-offset:2px}.controls.svelte-1poqr3u.svelte-1poqr3u{display:flex;align-items:center;justify-content:space-between;margin:14px 0;gap:5px}label.svelte-1poqr3u.svelte-1poqr3u{display:flex;align-items:center;gap:4px}.place.svelte-1poqr3u.svelte-1poqr3u{justify-content:space-between;margin-bottom:5px}.reading.svelte-1poqr3u.svelte-1poqr3u{background:#21384a;border-radius:10px;padding:12px;margin:12px 0}.reading.svelte-1poqr3u>strong.svelte-1poqr3u{display:block;font-size:28px}.reading.svelte-1poqr3u strong small.svelte-1poqr3u{display:inline;font-size:14px}.reading.svelte-1poqr3u span.svelte-1poqr3u{font-size:12px}dl.svelte-1poqr3u.svelte-1poqr3u{margin:10px 0}dl.svelte-1poqr3u>div.svelte-1poqr3u{display:flex;justify-content:space-between;gap:8px;margin:5px 0}dt.svelte-1poqr3u.svelte-1poqr3u{font-size:11px;color:#bbcad6}dd.svelte-1poqr3u.svelte-1poqr3u{margin:0;font-size:12px}.legend.svelte-1poqr3u.svelte-1poqr3u{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:14px 0 3px}.legend.svelte-1poqr3u span.svelte-1poqr3u{border-top:7px solid var(--color);padding-top:3px;font-size:10px}.pending.svelte-1poqr3u.svelte-1poqr3u{display:grid;grid-template-columns:1fr auto;gap:6px;border-top:1px solid #42586b;margin-top:12px;padding-top:12px;font-size:12px}.pending.svelte-1poqr3u span.svelte-1poqr3u{color:#bbcad6}.error.svelte-1poqr3u.svelte-1poqr3u{background:#692f30;padding:9px;border-radius:7px;font-size:12px}details.svelte-1poqr3u.svelte-1poqr3u{margin-top:12px}summary.svelte-1poqr3u.svelte-1poqr3u{cursor:pointer;font-size:12px}details.svelte-1poqr3u p.svelte-1poqr3u{font-size:11px;color:#bbcad6}a.svelte-1poqr3u.svelte-1poqr3u{color:#ffd486}.timeline.svelte-1poqr3u.svelte-1poqr3u{display:flex;gap:5px;flex-wrap:wrap;max-height:180px;overflow:auto;margin-top:8px}.timeline.svelte-1poqr3u button.svelte-1poqr3u{font-size:10px}.timeline.svelte-1poqr3u .active.svelte-1poqr3u{border-color:#f9a825}footer.svelte-1poqr3u.svelte-1poqr3u{font-size:10px;color:#bbcad6;border-top:1px solid #42586b;margin-top:12px;padding-top:8px}.coordinates.svelte-1poqr3u.svelte-1poqr3u{display:flex;gap:5px;margin:8px 0}.coordinates.svelte-1poqr3u label.svelte-1poqr3u{font-size:11px;min-width:0}.coordinates.svelte-1poqr3u input.svelte-1poqr3u{width:68px;max-width:100%;box-sizing:border-box;color:inherit;background:#253d50;border:1px solid #526879;border-radius:6px;padding:5px}@media(max-width:600px){.panel.svelte-1poqr3u.svelte-1poqr3u{bottom:100px;width:270px;max-height:55dvh}.restore.svelte-1poqr3u.svelte-1poqr3u{bottom:100px}}");
 }
 
 function get_each_context(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[36] = list[i];
+	child_ctx[53] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[39] = list[i];
+	child_ctx[56] = list[i];
 	return child_ctx;
 }
 
-// (151:0) {:else}
+// (258:0) {:else}
 function create_else_block(ctx) {
 	let section;
 	let header;
@@ -777,93 +879,113 @@ function create_else_block(ctx) {
 	let t10;
 	let t11;
 	let t12;
-	let label2;
 	let t13;
-	let select;
-	let show_if = !/*places*/ ctx[10].some(/*func*/ ctx[19]);
-	let if_block2_anchor;
-	let select_value_value;
 	let t14;
-	let small1;
+	let label2;
 	let t15;
-	let t16_value = /*selected*/ ctx[3].lat.toFixed(3) + "";
+	let select;
+	let show_if = !/*places*/ ctx[15].some(/*func*/ ctx[27]);
+	let if_block4_anchor;
+	let select_value_value;
 	let t16;
-	let t17;
-	let t18_value = /*selected*/ ctx[3].lon.toFixed(3) + "";
+	let small1;
 	let t18;
-	let t19;
-	let t20;
 	let div2;
-	let span0;
+	let label3;
+	let t19;
+	let input2;
+	let label4;
+	let t20;
+	let input3;
+	let button2;
+	let t21;
+	let button2_disabled_value;
 	let t22;
-	let strong1;
-	let t23_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustSurface) + "";
 	let t23;
+	let small2;
+	let t24_value = /*selected*/ ctx[3].lat.toFixed(3) + "";
 	let t24;
 	let t25;
-	let dl;
+	let t26_value = /*selected*/ ctx[3].lon.toFixed(3) + "";
+	let t26;
+	let t27;
+	let t28;
+	let small3;
+	let t30;
 	let div3;
+	let span0;
+	let t32;
+	let strong1;
+	let t33_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustSurface) + "";
+	let t33;
+	let t34;
+	let t35;
+	let dl;
+	let div4;
 	let dt0;
 	let dd0;
-	let t27_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustFine) + "";
-	let t27;
-	let t28_value = (/*sample*/ ctx[9]?.dustFine != null ? ' µg/m³' : '') + "";
-	let t28;
-	let div4;
+	let t37_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustFine) + "";
+	let t37;
+	let t38_value = (/*sample*/ ctx[14]?.dustFine != null ? ' µg/m³' : '') + "";
+	let t38;
+	let div5;
 	let dt1;
 	let dd1;
-	let t30_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustAod, 2) + "";
-	let t30;
-	let t31;
-	let t32;
-	let t33;
+	let t40_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustAod, 2) + "";
+	let t40;
+	let t41;
+	let t42;
+	let t43;
 	let details0;
 	let summary0;
-	let t35;
-	let t36;
-	let div5;
-	let t41;
+	let t45;
+	let t46;
+	let div6;
+	let t51;
 	let details1;
-	let t52;
+	let t62;
 	let mounted;
 	let dispose;
-	let if_block0 = /*error*/ ctx[8] && create_if_block_9(ctx);
-	let if_block1 = /*stale*/ ctx[4] && create_if_block_8();
-	let if_block2 = show_if && create_if_block_7(ctx);
-	let each_value_1 = ensure_array_like(/*places*/ ctx[10]);
+	let if_block0 = /*error*/ ctx[9] && create_if_block_12(ctx);
+	let if_block1 = /*frameError*/ ctx[10] && create_if_block_11(ctx);
+	let if_block2 = /*frameLoading*/ ctx[8] && create_if_block_10();
+	let if_block3 = /*stale*/ ctx[5] && create_if_block_9();
+	let if_block4 = show_if && create_if_block_8(ctx);
+	let each_value_1 = ensure_array_like(/*places*/ ctx[15]);
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value_1.length; i += 1) {
 		each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
 	}
 
-	let if_block3 = /*sample*/ ctx[9]?.dustSurface != null && create_if_block_6();
+	let if_block5 = /*locationError*/ ctx[11] && create_if_block_7(ctx);
+	let if_block6 = /*sample*/ ctx[14]?.dustSurface != null && create_if_block_6();
 
 	function select_block_type_1(ctx, dirty) {
-		if (/*frame*/ ctx[5]) return create_if_block_5;
+		if (/*desired*/ ctx[4]) return create_if_block_5;
 		return create_else_block_2;
 	}
 
 	let current_block_type = select_block_type_1(ctx);
-	let if_block4 = current_block_type(ctx);
-	let if_block5 = /*sample*/ ctx[9] && create_if_block_4(ctx);
-	let if_block6 = /*showDust*/ ctx[2] && create_if_block_3();
+	let if_block7 = current_block_type(ctx);
+	let if_block8 = /*sample*/ ctx[14] && create_if_block_4(ctx);
+	let if_block9 = /*showDust*/ ctx[2] && create_if_block_3();
 
 	function select_block_type_2(ctx, dirty) {
-		if (/*forecast*/ ctx[0] && !/*stale*/ ctx[4]) return create_if_block_2;
+		if (/*forecast*/ ctx[0] && !/*stale*/ ctx[5]) return create_if_block_2;
 		return create_else_block_1;
 	}
 
 	let current_block_type_1 = select_block_type_2(ctx);
-	let if_block7 = current_block_type_1(ctx);
-	let if_block8 = /*forecast*/ ctx[0] && create_if_block_1(ctx);
+	let if_block10 = current_block_type_1(ctx);
+	let if_block11 = /*forecast*/ ctx[0] && create_if_block_1(ctx);
 
 	return {
 		c() {
 			section = element("section");
 			header = element("header");
 			div0 = element("div");
-			div0.innerHTML = `<strong class="svelte-l83tf1">Jordan Dust &amp; Fog</strong><small class="svelte-l83tf1">Experimental · v0.1.0</small>`;
+			div0.innerHTML = `<strong class="svelte-1poqr3u">Global Dust &amp; Fog</strong><small class="svelte-1poqr3u">Experimental · v0.2.0</small>`;
 			t2 = space();
 			button0 = element("button");
 			button0.textContent = "−";
@@ -884,94 +1006,132 @@ function create_else_block(ctx) {
 			t11 = space();
 			if (if_block1) if_block1.c();
 			t12 = space();
-			label2 = element("label");
-			t13 = text("Location\n      ");
-			select = element("select");
 			if (if_block2) if_block2.c();
-			if_block2_anchor = empty();
+			t13 = space();
+			if (if_block3) if_block3.c();
+			t14 = space();
+			label2 = element("label");
+			t15 = text("Location\n      ");
+			select = element("select");
+			if (if_block4) if_block4.c();
+			if_block4_anchor = empty();
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				each_blocks[i].c();
 			}
 
-			t14 = space();
+			t16 = space();
 			small1 = element("small");
-			t15 = text("Or click the map · ");
-			t16 = text(t16_value);
-			t17 = text("°N, ");
-			t18 = text(t18_value);
-			t19 = text("°E");
-			t20 = space();
+			small1.textContent = "Click anywhere on the globe or enter coordinates.";
+			t18 = space();
 			div2 = element("div");
-			span0 = element("span");
-			span0.textContent = "Forecast surface dust";
+			label3 = element("label");
+			t19 = text("Lat ");
+			input2 = element("input");
+			label4 = element("label");
+			t20 = text("Lon ");
+			input3 = element("input");
+			button2 = element("button");
+			t21 = text("Go");
 			t22 = space();
-			strong1 = element("strong");
-			t23 = text(t23_value);
-			if (if_block3) if_block3.c();
-			t24 = space();
-			if_block4.c();
-			t25 = space();
-			dl = element("dl");
+			if (if_block5) if_block5.c();
+			t23 = space();
+			small2 = element("small");
+			t24 = text(t24_value);
+			t25 = text("°, ");
+			t26 = text(t26_value);
+			t27 = text("° · signed latitude / longitude");
+			t28 = space();
+			small3 = element("small");
+			small3.textContent = "1.25° sampled overview · periods load on demand";
+			t30 = space();
 			div3 = element("div");
+			span0 = element("span");
+			span0.textContent = "Forecast surface dust · global overview";
+			t32 = space();
+			strong1 = element("strong");
+			t33 = text(t33_value);
+			if (if_block6) if_block6.c();
+			t34 = space();
+			if_block7.c();
+			t35 = space();
+			dl = element("dl");
+			div4 = element("div");
 			dt0 = element("dt");
 			dt0.textContent = "Fine dust (PM₂.₅ component)";
 			dd0 = element("dd");
-			t27 = text(t27_value);
-			t28 = text(t28_value);
-			div4 = element("div");
+			t37 = text(t37_value);
+			t38 = text(t38_value);
+			div5 = element("div");
 			dt1 = element("dt");
 			dt1.textContent = "Dust optical depth";
 			dd1 = element("dd");
-			t30 = text(t30_value);
-			t31 = space();
-			if (if_block5) if_block5.c();
-			t32 = space();
-			if (if_block6) if_block6.c();
-			t33 = space();
+			t40 = text(t40_value);
+			t41 = space();
+			if (if_block8) if_block8.c();
+			t42 = space();
+			if (if_block9) if_block9.c();
+			t43 = space();
 			details0 = element("details");
 			summary0 = element("summary");
 			summary0.textContent = "Available forecast intervals";
-			t35 = space();
-			if_block7.c();
-			t36 = space();
-			div5 = element("div");
-			div5.innerHTML = `<strong>Fog forecast</strong><span class="svelte-l83tf1">Not connected</span><strong>Satellite observations</strong><span class="svelte-l83tf1">Not connected</span>`;
-			t41 = space();
+			t45 = space();
+			if_block10.c();
+			t46 = space();
+			div6 = element("div");
+			div6.innerHTML = `<strong>Fog forecast</strong><span class="svelte-1poqr3u">Not connected</span><strong>Satellite observations</strong><span class="svelte-1poqr3u">Not connected</span>`;
+			t51 = space();
 			details1 = element("details");
-			details1.innerHTML = `<summary class="svelte-l83tf1">Sources and interpretation</summary> <p class="svelte-l83tf1">NASA GEOS-FP · 0.25° latitude × 0.3125° longitude. The buffered region includes Jordan and neighbouring areas. Native grid cells and nearest-cell point values are shown.</p> <p class="svelte-l83tf1">Surface dust is modelled dust mass, not total PM₁₀. Optical depth represents the whole atmospheric column; it is not surface visibility.</p> <p class="svelte-l83tf1">No ground confirmation, calibrated alert thresholds or notifications are implemented in this first version. Satellite low cloud will require ground evidence to confirm fog.</p> <p class="svelte-l83tf1"><a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer" class="svelte-l83tf1">Open EUMETSAT imagery viewer ↗</a> (external viewer; imagery is not analysed by this plugin).</p>`;
-			t52 = space();
-			if (if_block8) if_block8.c();
+			details1.innerHTML = `<summary class="svelte-1poqr3u">Sources and interpretation</summary> <p class="svelte-1poqr3u">Global NASA GEOS-FP · preview samples a 1.25° × 1.25° grid from the native 0.25° × 0.3125° model. Values are sampled nodes, not cell averages or street-level detail. Map cells represent the overview grid; polar values are available by coordinates, while the Mercator map stops near 85°.</p> <p class="svelte-1poqr3u">Surface dust is modelled dust mass, not total PM₁₀. Optical depth represents the whole atmospheric column; it is not surface visibility.</p> <p class="svelte-1poqr3u">No ground confirmation, calibrated alert thresholds or notifications are implemented in this first version. Satellite low cloud will require ground evidence to confirm fog.</p> <p class="svelte-1poqr3u"><a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer" class="svelte-1poqr3u">Open EUMETSAT imagery viewer ↗</a> (external viewer; imagery is not analysed by this plugin).</p>`;
+			t62 = space();
+			if (if_block11) if_block11.c();
 			attr(button0, "title", "Minimize panel");
 			attr(button0, "aria-label", "Minimize panel");
-			attr(button0, "class", "svelte-l83tf1");
-			attr(header, "class", "svelte-l83tf1");
+			attr(button0, "class", "svelte-1poqr3u");
+			attr(header, "class", "svelte-1poqr3u");
 			attr(input0, "type", "checkbox");
-			attr(label0, "class", "svelte-l83tf1");
+			attr(label0, "class", "svelte-1poqr3u");
 			attr(input1, "type", "checkbox");
-			attr(label1, "class", "svelte-l83tf1");
+			attr(label1, "class", "svelte-1poqr3u");
 			button1.disabled = button1_disabled_value = !/*enabled*/ ctx[1] || /*loading*/ ctx[7];
-			attr(button1, "class", "svelte-l83tf1");
-			attr(div1, "class", "controls svelte-l83tf1");
-			attr(select, "class", "svelte-l83tf1");
-			attr(label2, "class", "place svelte-l83tf1");
-			attr(small1, "class", "svelte-l83tf1");
-			attr(span0, "class", "svelte-l83tf1");
-			attr(strong1, "class", "svelte-l83tf1");
-			attr(div2, "class", "reading svelte-l83tf1");
-			attr(dt0, "class", "svelte-l83tf1");
-			attr(dd0, "class", "svelte-l83tf1");
-			attr(div3, "class", "svelte-l83tf1");
-			attr(dt1, "class", "svelte-l83tf1");
-			attr(dd1, "class", "svelte-l83tf1");
-			attr(div4, "class", "svelte-l83tf1");
-			attr(dl, "class", "svelte-l83tf1");
-			attr(summary0, "class", "svelte-l83tf1");
-			attr(details0, "class", "svelte-l83tf1");
-			attr(div5, "class", "pending svelte-l83tf1");
-			attr(details1, "class", "svelte-l83tf1");
-			attr(section, "class", "panel svelte-l83tf1");
-			attr(section, "aria-label", "Jordan Dust and Fog");
+			attr(button1, "class", "svelte-1poqr3u");
+			attr(div1, "class", "controls svelte-1poqr3u");
+			attr(select, "class", "svelte-1poqr3u");
+			attr(label2, "class", "place svelte-1poqr3u");
+			attr(small1, "class", "svelte-1poqr3u");
+			attr(input2, "aria-label", "Latitude");
+			attr(input2, "type", "number");
+			attr(input2, "min", "-90");
+			attr(input2, "max", "90");
+			attr(input2, "step", "any");
+			attr(input2, "class", "svelte-1poqr3u");
+			attr(label3, "class", "svelte-1poqr3u");
+			attr(input3, "aria-label", "Longitude");
+			attr(input3, "type", "number");
+			attr(input3, "step", "any");
+			attr(input3, "class", "svelte-1poqr3u");
+			attr(label4, "class", "svelte-1poqr3u");
+			button2.disabled = button2_disabled_value = !/*enabled*/ ctx[1];
+			attr(button2, "class", "svelte-1poqr3u");
+			attr(div2, "class", "coordinates svelte-1poqr3u");
+			attr(small2, "class", "svelte-1poqr3u");
+			attr(small3, "class", "svelte-1poqr3u");
+			attr(span0, "class", "svelte-1poqr3u");
+			attr(strong1, "class", "svelte-1poqr3u");
+			attr(div3, "class", "reading svelte-1poqr3u");
+			attr(dt0, "class", "svelte-1poqr3u");
+			attr(dd0, "class", "svelte-1poqr3u");
+			attr(div4, "class", "svelte-1poqr3u");
+			attr(dt1, "class", "svelte-1poqr3u");
+			attr(dd1, "class", "svelte-1poqr3u");
+			attr(div5, "class", "svelte-1poqr3u");
+			attr(dl, "class", "svelte-1poqr3u");
+			attr(summary0, "class", "svelte-1poqr3u");
+			attr(details0, "class", "svelte-1poqr3u");
+			attr(div6, "class", "pending svelte-1poqr3u");
+			attr(details1, "class", "svelte-1poqr3u");
+			attr(section, "class", "panel svelte-1poqr3u");
+			attr(section, "aria-label", "Global Dust and Fog");
 		},
 		m(target, anchor) {
 			insert(target, section, anchor);
@@ -998,11 +1158,15 @@ function create_else_block(ctx) {
 			append(section, t11);
 			if (if_block1) if_block1.m(section, null);
 			append(section, t12);
+			if (if_block2) if_block2.m(section, null);
+			append(section, t13);
+			if (if_block3) if_block3.m(section, null);
+			append(section, t14);
 			append(section, label2);
-			append(label2, t13);
+			append(label2, t15);
 			append(label2, select);
-			if (if_block2) if_block2.m(select, null);
-			append(select, if_block2_anchor);
+			if (if_block4) if_block4.m(select, null);
+			append(select, if_block4_anchor);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				if (each_blocks[i]) {
@@ -1011,57 +1175,77 @@ function create_else_block(ctx) {
 			}
 
 			select_option(select, /*selected*/ ctx[3].name);
-			append(section, t14);
+			append(section, t16);
 			append(section, small1);
-			append(small1, t15);
-			append(small1, t16);
-			append(small1, t17);
-			append(small1, t18);
-			append(small1, t19);
-			append(section, t20);
+			append(section, t18);
 			append(section, div2);
-			append(div2, span0);
-			append(div2, t22);
-			append(div2, strong1);
-			append(strong1, t23);
-			if (if_block3) if_block3.m(strong1, null);
-			append(div2, t24);
-			if_block4.m(div2, null);
-			append(section, t25);
-			append(section, dl);
-			append(dl, div3);
-			append(div3, dt0);
-			append(div3, dd0);
-			append(dd0, t27);
-			append(dd0, t28);
-			append(dl, div4);
-			append(div4, dt1);
-			append(div4, dd1);
-			append(dd1, t30);
-			append(section, t31);
+			append(div2, label3);
+			append(label3, t19);
+			append(label3, input2);
+			set_input_value(input2, /*inputLat*/ ctx[12]);
+			append(div2, label4);
+			append(label4, t20);
+			append(label4, input3);
+			set_input_value(input3, /*inputLon*/ ctx[13]);
+			append(div2, button2);
+			append(button2, t21);
+			append(section, t22);
 			if (if_block5) if_block5.m(section, null);
-			append(section, t32);
-			if (if_block6) if_block6.m(section, null);
-			append(section, t33);
+			append(section, t23);
+			append(section, small2);
+			append(small2, t24);
+			append(small2, t25);
+			append(small2, t26);
+			append(small2, t27);
+			append(section, t28);
+			append(section, small3);
+			append(section, t30);
+			append(section, div3);
+			append(div3, span0);
+			append(div3, t32);
+			append(div3, strong1);
+			append(strong1, t33);
+			if (if_block6) if_block6.m(strong1, null);
+			append(div3, t34);
+			if_block7.m(div3, null);
+			append(section, t35);
+			append(section, dl);
+			append(dl, div4);
+			append(div4, dt0);
+			append(div4, dd0);
+			append(dd0, t37);
+			append(dd0, t38);
+			append(dl, div5);
+			append(div5, dt1);
+			append(div5, dd1);
+			append(dd1, t40);
+			append(section, t41);
+			if (if_block8) if_block8.m(section, null);
+			append(section, t42);
+			if (if_block9) if_block9.m(section, null);
+			append(section, t43);
 			append(section, details0);
 			append(details0, summary0);
-			append(details0, t35);
-			if_block7.m(details0, null);
-			append(section, t36);
-			append(section, div5);
-			append(section, t41);
+			append(details0, t45);
+			if_block10.m(details0, null);
+			append(section, t46);
+			append(section, div6);
+			append(section, t51);
 			append(section, details1);
-			append(section, t52);
-			if (if_block8) if_block8.m(section, null);
+			append(section, t62);
+			if (if_block11) if_block11.m(section, null);
 
 			if (!mounted) {
 				dispose = [
-					listen(button0, "click", /*click_handler_1*/ ctx[21]),
-					listen(input0, "change", /*input0_change_handler*/ ctx[22]),
-					listen(input0, "change", /*toggleEnabled*/ ctx[14]),
-					listen(input1, "change", /*input1_change_handler*/ ctx[23]),
-					listen(button1, "click", /*load*/ ctx[15]),
-					listen(select, "change", /*change_handler*/ ctx[24])
+					listen(button0, "click", /*click_handler_1*/ ctx[29]),
+					listen(input0, "change", /*input0_change_handler*/ ctx[30]),
+					listen(input0, "change", /*toggleEnabled*/ ctx[20]),
+					listen(input1, "change", /*input1_change_handler*/ ctx[31]),
+					listen(button1, "click", /*load*/ ctx[21]),
+					listen(select, "change", /*change_handler*/ ctx[32]),
+					listen(input2, "input", /*input2_input_handler*/ ctx[33]),
+					listen(input3, "input", /*input3_input_handler*/ ctx[34]),
+					listen(button2, "click", /*goToCoordinates*/ ctx[19])
 				];
 
 				mounted = true;
@@ -1082,11 +1266,11 @@ function create_else_block(ctx) {
 				button1.disabled = button1_disabled_value;
 			}
 
-			if (/*error*/ ctx[8]) {
+			if (/*error*/ ctx[9]) {
 				if (if_block0) {
 					if_block0.p(ctx, dirty);
 				} else {
-					if_block0 = create_if_block_9(ctx);
+					if_block0 = create_if_block_12(ctx);
 					if_block0.c();
 					if_block0.m(section, t11);
 				}
@@ -1095,9 +1279,11 @@ function create_else_block(ctx) {
 				if_block0 = null;
 			}
 
-			if (/*stale*/ ctx[4]) {
-				if (if_block1) ; else {
-					if_block1 = create_if_block_8();
+			if (/*frameError*/ ctx[10]) {
+				if (if_block1) {
+					if_block1.p(ctx, dirty);
+				} else {
+					if_block1 = create_if_block_11(ctx);
 					if_block1.c();
 					if_block1.m(section, t12);
 				}
@@ -1106,23 +1292,45 @@ function create_else_block(ctx) {
 				if_block1 = null;
 			}
 
-			if (dirty[0] & /*selected*/ 8) show_if = !/*places*/ ctx[10].some(/*func*/ ctx[19]);
-
-			if (show_if) {
-				if (if_block2) {
-					if_block2.p(ctx, dirty);
-				} else {
-					if_block2 = create_if_block_7(ctx);
+			if (/*frameLoading*/ ctx[8]) {
+				if (if_block2) ; else {
+					if_block2 = create_if_block_10();
 					if_block2.c();
-					if_block2.m(select, if_block2_anchor);
+					if_block2.m(section, t13);
 				}
 			} else if (if_block2) {
 				if_block2.d(1);
 				if_block2 = null;
 			}
 
-			if (dirty[0] & /*places*/ 1024) {
-				each_value_1 = ensure_array_like(/*places*/ ctx[10]);
+			if (/*stale*/ ctx[5]) {
+				if (if_block3) ; else {
+					if_block3 = create_if_block_9();
+					if_block3.c();
+					if_block3.m(section, t14);
+				}
+			} else if (if_block3) {
+				if_block3.d(1);
+				if_block3 = null;
+			}
+
+			if (dirty[0] & /*selected*/ 8) show_if = !/*places*/ ctx[15].some(/*func*/ ctx[27]);
+
+			if (show_if) {
+				if (if_block4) {
+					if_block4.p(ctx, dirty);
+				} else {
+					if_block4 = create_if_block_8(ctx);
+					if_block4.c();
+					if_block4.m(select, if_block4_anchor);
+				}
+			} else if (if_block4) {
+				if_block4.d(1);
+				if_block4 = null;
+			}
+
+			if (dirty[0] & /*places*/ 32768) {
+				each_value_1 = ensure_array_like(/*places*/ ctx[15]);
 				let i;
 
 				for (i = 0; i < each_value_1.length; i += 1) {
@@ -1144,88 +1352,113 @@ function create_else_block(ctx) {
 				each_blocks.length = each_value_1.length;
 			}
 
-			if (dirty[0] & /*selected, places*/ 1032 && select_value_value !== (select_value_value = /*selected*/ ctx[3].name)) {
+			if (dirty[0] & /*selected, places*/ 32776 && select_value_value !== (select_value_value = /*selected*/ ctx[3].name)) {
 				select_option(select, /*selected*/ ctx[3].name);
 			}
 
-			if (dirty[0] & /*selected*/ 8 && t16_value !== (t16_value = /*selected*/ ctx[3].lat.toFixed(3) + "")) set_data(t16, t16_value);
-			if (dirty[0] & /*selected*/ 8 && t18_value !== (t18_value = /*selected*/ ctx[3].lon.toFixed(3) + "")) set_data(t18, t18_value);
-			if (dirty[0] & /*sample*/ 512 && t23_value !== (t23_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustSurface) + "")) set_data(t23, t23_value);
-
-			if (/*sample*/ ctx[9]?.dustSurface != null) {
-				if (if_block3) ; else {
-					if_block3 = create_if_block_6();
-					if_block3.c();
-					if_block3.m(strong1, null);
-				}
-			} else if (if_block3) {
-				if_block3.d(1);
-				if_block3 = null;
+			if (dirty[0] & /*inputLat*/ 4096 && to_number(input2.value) !== /*inputLat*/ ctx[12]) {
+				set_input_value(input2, /*inputLat*/ ctx[12]);
 			}
 
-			if (current_block_type === (current_block_type = select_block_type_1(ctx)) && if_block4) {
-				if_block4.p(ctx, dirty);
-			} else {
-				if_block4.d(1);
-				if_block4 = current_block_type(ctx);
-
-				if (if_block4) {
-					if_block4.c();
-					if_block4.m(div2, null);
-				}
+			if (dirty[0] & /*inputLon*/ 8192 && to_number(input3.value) !== /*inputLon*/ ctx[13]) {
+				set_input_value(input3, /*inputLon*/ ctx[13]);
 			}
 
-			if (dirty[0] & /*sample*/ 512 && t27_value !== (t27_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustFine) + "")) set_data(t27, t27_value);
-			if (dirty[0] & /*sample*/ 512 && t28_value !== (t28_value = (/*sample*/ ctx[9]?.dustFine != null ? ' µg/m³' : '') + "")) set_data(t28, t28_value);
-			if (dirty[0] & /*sample*/ 512 && t30_value !== (t30_value = /*format*/ ctx[12](/*sample*/ ctx[9]?.dustAod, 2) + "")) set_data(t30, t30_value);
+			if (dirty[0] & /*enabled*/ 2 && button2_disabled_value !== (button2_disabled_value = !/*enabled*/ ctx[1])) {
+				button2.disabled = button2_disabled_value;
+			}
 
-			if (/*sample*/ ctx[9]) {
+			if (/*locationError*/ ctx[11]) {
 				if (if_block5) {
 					if_block5.p(ctx, dirty);
 				} else {
-					if_block5 = create_if_block_4(ctx);
+					if_block5 = create_if_block_7(ctx);
 					if_block5.c();
-					if_block5.m(section, t32);
+					if_block5.m(section, t23);
 				}
 			} else if (if_block5) {
 				if_block5.d(1);
 				if_block5 = null;
 			}
 
-			if (/*showDust*/ ctx[2]) {
+			if (dirty[0] & /*selected*/ 8 && t24_value !== (t24_value = /*selected*/ ctx[3].lat.toFixed(3) + "")) set_data(t24, t24_value);
+			if (dirty[0] & /*selected*/ 8 && t26_value !== (t26_value = /*selected*/ ctx[3].lon.toFixed(3) + "")) set_data(t26, t26_value);
+			if (dirty[0] & /*sample*/ 16384 && t33_value !== (t33_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustSurface) + "")) set_data(t33, t33_value);
+
+			if (/*sample*/ ctx[14]?.dustSurface != null) {
 				if (if_block6) ; else {
-					if_block6 = create_if_block_3();
+					if_block6 = create_if_block_6();
 					if_block6.c();
-					if_block6.m(section, t33);
+					if_block6.m(strong1, null);
 				}
 			} else if (if_block6) {
 				if_block6.d(1);
 				if_block6 = null;
 			}
 
-			if (current_block_type_1 === (current_block_type_1 = select_block_type_2(ctx)) && if_block7) {
+			if (current_block_type === (current_block_type = select_block_type_1(ctx)) && if_block7) {
 				if_block7.p(ctx, dirty);
 			} else {
 				if_block7.d(1);
-				if_block7 = current_block_type_1(ctx);
+				if_block7 = current_block_type(ctx);
 
 				if (if_block7) {
 					if_block7.c();
-					if_block7.m(details0, null);
+					if_block7.m(div3, null);
 				}
 			}
 
-			if (/*forecast*/ ctx[0]) {
+			if (dirty[0] & /*sample*/ 16384 && t37_value !== (t37_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustFine) + "")) set_data(t37, t37_value);
+			if (dirty[0] & /*sample*/ 16384 && t38_value !== (t38_value = (/*sample*/ ctx[14]?.dustFine != null ? ' µg/m³' : '') + "")) set_data(t38, t38_value);
+			if (dirty[0] & /*sample*/ 16384 && t40_value !== (t40_value = /*format*/ ctx[17](/*sample*/ ctx[14]?.dustAod, 2) + "")) set_data(t40, t40_value);
+
+			if (/*sample*/ ctx[14]) {
 				if (if_block8) {
 					if_block8.p(ctx, dirty);
 				} else {
-					if_block8 = create_if_block_1(ctx);
+					if_block8 = create_if_block_4(ctx);
 					if_block8.c();
-					if_block8.m(section, null);
+					if_block8.m(section, t42);
 				}
 			} else if (if_block8) {
 				if_block8.d(1);
 				if_block8 = null;
+			}
+
+			if (/*showDust*/ ctx[2]) {
+				if (if_block9) ; else {
+					if_block9 = create_if_block_3();
+					if_block9.c();
+					if_block9.m(section, t43);
+				}
+			} else if (if_block9) {
+				if_block9.d(1);
+				if_block9 = null;
+			}
+
+			if (current_block_type_1 === (current_block_type_1 = select_block_type_2(ctx)) && if_block10) {
+				if_block10.p(ctx, dirty);
+			} else {
+				if_block10.d(1);
+				if_block10 = current_block_type_1(ctx);
+
+				if (if_block10) {
+					if_block10.c();
+					if_block10.m(details0, null);
+				}
+			}
+
+			if (/*forecast*/ ctx[0]) {
+				if (if_block11) {
+					if_block11.p(ctx, dirty);
+				} else {
+					if_block11 = create_if_block_1(ctx);
+					if_block11.c();
+					if_block11.m(section, null);
+				}
+			} else if (if_block11) {
+				if_block11.d(1);
+				if_block11 = null;
 			}
 		},
 		d(detaching) {
@@ -1236,20 +1469,23 @@ function create_else_block(ctx) {
 			if (if_block0) if_block0.d();
 			if (if_block1) if_block1.d();
 			if (if_block2) if_block2.d();
-			destroy_each(each_blocks, detaching);
 			if (if_block3) if_block3.d();
-			if_block4.d();
+			if (if_block4) if_block4.d();
+			destroy_each(each_blocks, detaching);
 			if (if_block5) if_block5.d();
 			if (if_block6) if_block6.d();
 			if_block7.d();
 			if (if_block8) if_block8.d();
+			if (if_block9) if_block9.d();
+			if_block10.d();
+			if (if_block11) if_block11.d();
 			mounted = false;
 			run_all(dispose);
 		}
 	};
 }
 
-// (149:0) {#if hidden}
+// (256:0) {#if hidden}
 function create_if_block(ctx) {
 	let button;
 	let mounted;
@@ -1258,14 +1494,14 @@ function create_if_block(ctx) {
 	return {
 		c() {
 			button = element("button");
-			button.textContent = "🌫 Jordan Dust & Fog";
-			attr(button, "class", "restore svelte-l83tf1");
+			button.textContent = "🌫 Global Dust & Fog";
+			attr(button, "class", "restore svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*click_handler*/ ctx[20]);
+				dispose = listen(button, "click", /*click_handler*/ ctx[28]);
 				mounted = true;
 			}
 		},
@@ -1281,16 +1517,16 @@ function create_if_block(ctx) {
 	};
 }
 
-// (160:4) {#if error}
-function create_if_block_9(ctx) {
+// (267:4) {#if error}
+function create_if_block_12(ctx) {
 	let p;
 	let t;
 
 	return {
 		c() {
 			p = element("p");
-			t = text(/*error*/ ctx[8]);
-			attr(p, "class", "error svelte-l83tf1");
+			t = text(/*error*/ ctx[9]);
+			attr(p, "class", "error svelte-1poqr3u");
 			attr(p, "role", "alert");
 		},
 		m(target, anchor) {
@@ -1298,7 +1534,7 @@ function create_if_block_9(ctx) {
 			append(p, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*error*/ 256) set_data(t, /*error*/ ctx[8]);
+			if (dirty[0] & /*error*/ 512) set_data(t, /*error*/ ctx[9]);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1308,15 +1544,42 @@ function create_if_block_9(ctx) {
 	};
 }
 
-// (161:4) {#if stale}
-function create_if_block_8(ctx) {
+// (268:4) {#if frameError}
+function create_if_block_11(ctx) {
+	let p;
+	let t;
+
+	return {
+		c() {
+			p = element("p");
+			t = text(/*frameError*/ ctx[10]);
+			attr(p, "class", "error svelte-1poqr3u");
+			attr(p, "role", "alert");
+		},
+		m(target, anchor) {
+			insert(target, p, anchor);
+			append(p, t);
+		},
+		p(ctx, dirty) {
+			if (dirty[0] & /*frameError*/ 1024) set_data(t, /*frameError*/ ctx[10]);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(p);
+			}
+		}
+	};
+}
+
+// (269:4) {#if frameLoading}
+function create_if_block_10(ctx) {
 	let p;
 
 	return {
 		c() {
 			p = element("p");
-			p.textContent = "Forecast expired or model run older than 36 hours. Layer hidden.";
-			attr(p, "class", "error svelte-l83tf1");
+			p.textContent = "Loading selected global forecast period…";
+			attr(p, "role", "status");
 		},
 		m(target, anchor) {
 			insert(target, p, anchor);
@@ -1329,8 +1592,29 @@ function create_if_block_8(ctx) {
 	};
 }
 
-// (164:8) {#if !places.some(p => p.name === selected.name)}
-function create_if_block_7(ctx) {
+// (270:4) {#if stale}
+function create_if_block_9(ctx) {
+	let p;
+
+	return {
+		c() {
+			p = element("p");
+			p.textContent = "Forecast expired or model run older than 36 hours. Layer hidden.";
+			attr(p, "class", "error svelte-1poqr3u");
+		},
+		m(target, anchor) {
+			insert(target, p, anchor);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(p);
+			}
+		}
+	};
+}
+
+// (273:8) {#if !places.some(p => p.name === selected.name)}
+function create_if_block_8(ctx) {
 	let option;
 	let t_value = /*selected*/ ctx[3].name + "";
 	let t;
@@ -1350,7 +1634,7 @@ function create_if_block_7(ctx) {
 		p(ctx, dirty) {
 			if (dirty[0] & /*selected*/ 8 && t_value !== (t_value = /*selected*/ ctx[3].name + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*selected, places*/ 1032 && option_value_value !== (option_value_value = /*selected*/ ctx[3].name)) {
+			if (dirty[0] & /*selected, places*/ 32776 && option_value_value !== (option_value_value = /*selected*/ ctx[3].name)) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -1363,17 +1647,17 @@ function create_if_block_7(ctx) {
 	};
 }
 
-// (165:8) {#each places as place}
+// (274:8) {#each places as place}
 function create_each_block_1(ctx) {
 	let option;
-	let t_value = /*place*/ ctx[39].name + "";
+	let t_value = /*place*/ ctx[56].name + "";
 	let t;
 
 	return {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = /*place*/ ctx[39].name;
+			option.__value = /*place*/ ctx[56].name;
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1389,7 +1673,33 @@ function create_each_block_1(ctx) {
 	};
 }
 
-// (171:43) {#if sample?.dustSurface != null}
+// (279:4) {#if locationError}
+function create_if_block_7(ctx) {
+	let p;
+	let t;
+
+	return {
+		c() {
+			p = element("p");
+			t = text(/*locationError*/ ctx[11]);
+			attr(p, "class", "error svelte-1poqr3u");
+		},
+		m(target, anchor) {
+			insert(target, p, anchor);
+			append(p, t);
+		},
+		p(ctx, dirty) {
+			if (dirty[0] & /*locationError*/ 2048) set_data(t, /*locationError*/ ctx[11]);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(p);
+			}
+		}
+	};
+}
+
+// (284:43) {#if sample?.dustSurface != null}
 function create_if_block_6(ctx) {
 	let small;
 
@@ -1397,7 +1707,7 @@ function create_if_block_6(ctx) {
 		c() {
 			small = element("small");
 			small.textContent = "µg/m³";
-			attr(small, "class", "svelte-l83tf1");
+			attr(small, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -1410,7 +1720,7 @@ function create_if_block_6(ctx) {
 	};
 }
 
-// (173:6) {:else}
+// (286:6) {:else}
 function create_else_block_2(ctx) {
 	let small;
 
@@ -1424,7 +1734,7 @@ function create_else_block_2(ctx) {
 		c() {
 			small = element("small");
 			t = text(t_value);
-			attr(small, "class", "svelte-l83tf1");
+			attr(small, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -1443,13 +1753,13 @@ function create_else_block_2(ctx) {
 	};
 }
 
-// (172:6) {#if frame}
+// (285:6) {#if desired}
 function create_if_block_5(ctx) {
 	let small;
-	let t0_value = /*displayTime*/ ctx[11](/*frame*/ ctx[5].start) + "";
+	let t0_value = /*displayTime*/ ctx[16](/*desired*/ ctx[4].start) + "";
 	let t0;
 	let t1;
-	let t2_value = /*displayTime*/ ctx[11](/*frame*/ ctx[5].end) + "";
+	let t2_value = /*displayTime*/ ctx[16](/*desired*/ ctx[4].end) + "";
 	let t2;
 	let t3;
 
@@ -1460,7 +1770,7 @@ function create_if_block_5(ctx) {
 			t1 = text(" – ");
 			t2 = text(t2_value);
 			t3 = text(" · 3-hour mean");
-			attr(small, "class", "svelte-l83tf1");
+			attr(small, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -1470,8 +1780,8 @@ function create_if_block_5(ctx) {
 			append(small, t3);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*frame*/ 32 && t0_value !== (t0_value = /*displayTime*/ ctx[11](/*frame*/ ctx[5].start) + "")) set_data(t0, t0_value);
-			if (dirty[0] & /*frame*/ 32 && t2_value !== (t2_value = /*displayTime*/ ctx[11](/*frame*/ ctx[5].end) + "")) set_data(t2, t2_value);
+			if (dirty[0] & /*desired*/ 16 && t0_value !== (t0_value = /*displayTime*/ ctx[16](/*desired*/ ctx[4].start) + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*desired*/ 16 && t2_value !== (t2_value = /*displayTime*/ ctx[16](/*desired*/ ctx[4].end) + "")) set_data(t2, t2_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1481,26 +1791,26 @@ function create_if_block_5(ctx) {
 	};
 }
 
-// (177:4) {#if sample}
+// (290:4) {#if sample}
 function create_if_block_4(ctx) {
 	let small;
 	let t0;
-	let t1_value = /*sample*/ ctx[9].lat.toFixed(3) + "";
+	let t1_value = /*sample*/ ctx[14].lat.toFixed(3) + "";
 	let t1;
 	let t2;
-	let t3_value = /*sample*/ ctx[9].lon.toFixed(3) + "";
+	let t3_value = /*sample*/ ctx[14].lon.toFixed(3) + "";
 	let t3;
 	let t4;
 
 	return {
 		c() {
 			small = element("small");
-			t0 = text("Nearest GEOS cell: ");
+			t0 = text("Nearest sampled GEOS node: ");
 			t1 = text(t1_value);
-			t2 = text("°N, ");
+			t2 = text("°, ");
 			t3 = text(t3_value);
-			t4 = text("°E");
-			attr(small, "class", "svelte-l83tf1");
+			t4 = text("°");
+			attr(small, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -1511,8 +1821,8 @@ function create_if_block_4(ctx) {
 			append(small, t4);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*sample*/ 512 && t1_value !== (t1_value = /*sample*/ ctx[9].lat.toFixed(3) + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*sample*/ 512 && t3_value !== (t3_value = /*sample*/ ctx[9].lon.toFixed(3) + "")) set_data(t3, t3_value);
+			if (dirty[0] & /*sample*/ 16384 && t1_value !== (t1_value = /*sample*/ ctx[14].lat.toFixed(3) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*sample*/ 16384 && t3_value !== (t3_value = /*sample*/ ctx[14].lon.toFixed(3) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1522,7 +1832,7 @@ function create_if_block_4(ctx) {
 	};
 }
 
-// (178:4) {#if showDust}
+// (291:4) {#if showDust}
 function create_if_block_3(ctx) {
 	let div;
 	let small;
@@ -1530,12 +1840,12 @@ function create_if_block_3(ctx) {
 	return {
 		c() {
 			div = element("div");
-			div.innerHTML = `<span style="--color:#fde0a3" class="svelte-l83tf1">0–100</span><span style="--color:#f9a825" class="svelte-l83tf1">100–300</span> <span style="--color:#e36c23" class="svelte-l83tf1">300–1,000</span><span style="--color:#b64231" class="svelte-l83tf1">≥1,000</span> `;
+			div.innerHTML = `<span style="--color:#fde0a3" class="svelte-1poqr3u">0–100</span><span style="--color:#f9a825" class="svelte-1poqr3u">100–300</span> <span style="--color:#e36c23" class="svelte-1poqr3u">300–1,000</span><span style="--color:#b64231" class="svelte-1poqr3u">≥1,000</span> `;
 			small = element("small");
 			small.textContent = "µg/m³ · display bins, not warning levels · blank cells may be unknown";
-			attr(div, "class", "legend svelte-l83tf1");
+			attr(div, "class", "legend svelte-1poqr3u");
 			attr(div, "aria-label", "Surface dust concentration scale");
-			attr(small, "class", "svelte-l83tf1");
+			attr(small, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
@@ -1550,7 +1860,7 @@ function create_if_block_3(ctx) {
 	};
 }
 
-// (185:19) {:else}
+// (298:19) {:else}
 function create_else_block_1(ctx) {
 	let p;
 
@@ -1558,7 +1868,7 @@ function create_else_block_1(ctx) {
 		c() {
 			p = element("p");
 			p.textContent = "Forecast unavailable.";
-			attr(p, "class", "svelte-l83tf1");
+			attr(p, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, p, anchor);
@@ -1572,7 +1882,7 @@ function create_else_block_1(ctx) {
 	};
 }
 
-// (183:6) {#if forecast && !stale}
+// (296:6) {#if forecast && !stale}
 function create_if_block_2(ctx) {
 	let div;
 	let each_value = ensure_array_like(/*forecast*/ ctx[0].frames);
@@ -1590,7 +1900,7 @@ function create_if_block_2(ctx) {
 				each_blocks[i].c();
 			}
 
-			attr(div, "class", "timeline svelte-l83tf1");
+			attr(div, "class", "timeline svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
@@ -1602,7 +1912,7 @@ function create_if_block_2(ctx) {
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*frame, forecast, displayTime*/ 2081) {
+			if (dirty[0] & /*desired, forecast, displayTime*/ 65553) {
 				each_value = ensure_array_like(/*forecast*/ ctx[0].frames);
 				let i;
 
@@ -1635,17 +1945,17 @@ function create_if_block_2(ctx) {
 	};
 }
 
-// (183:52) {#each forecast.frames as item}
+// (296:52) {#each forecast.frames as item}
 function create_each_block(ctx) {
 	let button;
-	let t0_value = /*displayTime*/ ctx[11](/*item*/ ctx[36].validTime) + "";
+	let t0_value = /*displayTime*/ ctx[16](/*item*/ ctx[53].validTime) + "";
 	let t0;
 	let t1;
 	let mounted;
 	let dispose;
 
 	function click_handler_2() {
-		return /*click_handler_2*/ ctx[25](/*item*/ ctx[36]);
+		return /*click_handler_2*/ ctx[35](/*item*/ ctx[53]);
 	}
 
 	return {
@@ -1653,8 +1963,8 @@ function create_each_block(ctx) {
 			button = element("button");
 			t0 = text(t0_value);
 			t1 = space();
-			attr(button, "class", "svelte-l83tf1");
-			toggle_class(button, "active", /*frame*/ ctx[5] === /*item*/ ctx[36]);
+			attr(button, "class", "svelte-1poqr3u");
+			toggle_class(button, "active", /*desired*/ ctx[4] === /*item*/ ctx[53]);
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
@@ -1668,10 +1978,10 @@ function create_each_block(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (dirty[0] & /*forecast*/ 1 && t0_value !== (t0_value = /*displayTime*/ ctx[11](/*item*/ ctx[36].validTime) + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*forecast*/ 1 && t0_value !== (t0_value = /*displayTime*/ ctx[16](/*item*/ ctx[53].validTime) + "")) set_data(t0, t0_value);
 
-			if (dirty[0] & /*frame, forecast*/ 33) {
-				toggle_class(button, "active", /*frame*/ ctx[5] === /*item*/ ctx[36]);
+			if (dirty[0] & /*desired, forecast*/ 17) {
+				toggle_class(button, "active", /*desired*/ ctx[4] === /*item*/ ctx[53]);
 			}
 		},
 		d(detaching) {
@@ -1686,15 +1996,15 @@ function create_each_block(ctx) {
 	};
 }
 
-// (194:4) {#if forecast}
+// (307:4) {#if forecast}
 function create_if_block_1(ctx) {
 	let footer;
 	let t0;
-	let t1_value = /*displayTime*/ ctx[11](/*forecast*/ ctx[0].runTime) + "";
+	let t1_value = /*displayTime*/ ctx[16](/*forecast*/ ctx[0].runTime) + "";
 	let t1;
 	let br0;
 	let t2;
-	let t3_value = /*displayTime*/ ctx[11](/*forecast*/ ctx[0].retrievedAt) + "";
+	let t3_value = /*displayTime*/ ctx[16](/*forecast*/ ctx[0].retrievedAt) + "";
 	let t3;
 	let br1;
 	let t4;
@@ -1709,7 +2019,7 @@ function create_if_block_1(ctx) {
 			t3 = text(t3_value);
 			br1 = element("br");
 			t4 = text("Times use your device timezone.");
-			attr(footer, "class", "svelte-l83tf1");
+			attr(footer, "class", "svelte-1poqr3u");
 		},
 		m(target, anchor) {
 			insert(target, footer, anchor);
@@ -1722,8 +2032,8 @@ function create_if_block_1(ctx) {
 			append(footer, t4);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*forecast*/ 1 && t1_value !== (t1_value = /*displayTime*/ ctx[11](/*forecast*/ ctx[0].runTime) + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*forecast*/ 1 && t3_value !== (t3_value = /*displayTime*/ ctx[11](/*forecast*/ ctx[0].retrievedAt) + "")) set_data(t3, t3_value);
+			if (dirty[0] & /*forecast*/ 1 && t1_value !== (t1_value = /*displayTime*/ ctx[16](/*forecast*/ ctx[0].runTime) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*forecast*/ 1 && t3_value !== (t3_value = /*displayTime*/ ctx[16](/*forecast*/ ctx[0].retrievedAt) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1778,41 +2088,57 @@ function create_fragment(ctx) {
 	};
 }
 
-const DATA_URL = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/main/data/latest.json';
+const BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/main/data/global/';
 
 function instance($$self, $$props, $$invalidate) {
 	let stale;
-	let frame;
+	let desired;
 	let sample;
 
 	const places = [
 		{ name: 'Amman', lat: 31.95, lon: 35.93 },
 		{ name: 'Fuheis', lat: 32.01, lon: 35.77 },
-		{ name: 'Irbid', lat: 32.56, lon: 35.85 },
-		{ name: 'Mafraq', lat: 32.34, lon: 36.21 },
-		{ name: 'Karak', lat: 31.18, lon: 35.70 },
-		{ name: 'Ma’an', lat: 30.19, lon: 35.73 },
-		{ name: 'Aqaba', lat: 29.53, lon: 35.01 },
+		{ name: 'London', lat: 51.51, lon: -0.13 },
 		{
-			name: 'Queen Alia',
-			lat: 31.72,
-			lon: 35.99
+			name: 'New York',
+			lat: 40.71,
+			lon: -74.01
+		},
+		{ name: 'Delhi', lat: 28.61, lon: 77.21 },
+		{ name: 'Sydney', lat: -33.87, lon: 151.21 },
+		{
+			name: 'Cape Town',
+			lat: -33.92,
+			lon: 18.42
+		},
+		{
+			name: 'São Paulo',
+			lat: -23.55,
+			lon: -46.63
 		}
 	];
 
-	let forecast = null;
+	let forecast = null, activeFrame = null;
 
 	let enabled = true,
 		showDust = true,
 		hidden = false,
 		loading = false,
+		frameLoading = false,
 		destroyed = false;
 
-	let error = '', timestamp = Date.now(), now = Date.now();
-	let selected = places[0];
-	let overlay = null, pointer = null, request = null;
-	let timer, refreshTimer, timestampListener;
-	let generation = 0;
+	let error = '',
+		frameError = '',
+		locationError = '',
+		timestamp = Date.now(),
+		now = Date.now();
+
+	let selected = places[0], inputLat = selected.lat, inputLon = selected.lon;
+	let canvas = null, pointer = null, drawRequest = 0;
+	let manifestAbort = null, frameAbort = null;
+	let timer, refreshTimer, timestampListener, resizeObserver = null;
+	let manifestEpoch = 0, frameEpoch = 0, frameKey = '';
+	const frames = new Map();
 
 	const displayTime = value => new Date(value).toLocaleString(undefined, {
 		month: 'short',
@@ -1825,52 +2151,43 @@ function instance($$self, $$props, $$invalidate) {
 	? 'Unavailable'
 	: value.toFixed(digits);
 
-	function clearOverlay() {
-		if (overlay) {
-			map.removeLayer(overlay);
-			overlay = null;
-		}
+	function scheduleRender(..._args) {
+		if (destroyed || !canvas || drawRequest) return;
+		drawRequest = requestAnimationFrame(paint);
 	}
 
-	function renderDust(active, visible) {
-		clearOverlay();
-		if (!active || !visible || !forecast || typeof L === 'undefined') return;
-		const pane = map.getPane('jordan-dust') || map.createPane('jordan-dust');
-		pane.style.zIndex = '390';
-		pane.style.pointerEvents = 'none';
-		const next = L.layerGroup();
-		const ys = forecast.latitudes, xs = forecast.longitudes;
-		const dy = 0.125, dx = 0.15625;
+	function paint() {
+		drawRequest = 0;
+		if (!canvas || destroyed) return;
+		const size = map.getSize(), ratio = Math.min(window.devicePixelRatio || 1, 2);
+		const width = Math.max(1, size.x), height = Math.max(1, size.y);
 
-		// Native model cells are deliberately visible; no artificial fine-scale detail.
-		for (let y = 0; y < ys.length; y++) for (let x = 0; x < xs.length; x++) {
-			const color = dustColor(active.dustSurface[y][x]);
-			if (!color) continue;
-
-			L.polygon(
-				[
-					[ys[y] - dy, xs[x] - dx],
-					[ys[y] - dy, xs[x] + dx],
-					[ys[y] + dy, xs[x] + dx],
-					[ys[y] + dy, xs[x] - dx]
-				],
-				{
-					pane: 'jordan-dust',
-					stroke: false,
-					fillColor: color,
-					fillOpacity: 0.48,
-					interactive: false
-				}
-			).addTo(next);
+		if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+			$$invalidate(26, canvas.width = Math.round(width * ratio), canvas);
+			$$invalidate(26, canvas.height = Math.round(height * ratio), canvas);
 		}
 
-		overlay = next.addTo(map);
+		$$invalidate(26, canvas.style.width = width + 'px', canvas);
+		$$invalidate(26, canvas.style.height = height + 'px', canvas);
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return;
+		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+		const visible = enabled && showDust && !stale && desired && activeFrame?.validTime === desired.validTime;
+		drawGlobalGrid(ctx, map, visible ? forecast : null, visible ? activeFrame : null, width, height);
 	}
 
 	function selectPoint(value) {
+		if (!enabled) return;
 		const lat = value?.lat ?? value?.latitude ?? value?.latlng?.lat;
-		const lon = value?.lon ?? value?.lng ?? value?.longitude ?? value?.latlng?.lng;
-		if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+		const rawLon = value?.lon ?? value?.lng ?? value?.longitude ?? value?.latlng?.lng;
+
+		if (typeof lat !== 'number' || typeof rawLon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(rawLon) || lat < -90 || lat > 90) {
+			$$invalidate(11, locationError = 'Enter a latitude from −90 to 90 and a finite longitude.');
+			return;
+		}
+
+		const lon = wrapLongitude(rawLon);
+		$$invalidate(11, locationError = '');
 
 		$$invalidate(3, selected = {
 			name: value.name || 'Selected location',
@@ -1878,9 +2195,11 @@ function instance($$self, $$props, $$invalidate) {
 			lon
 		});
 
+		$$invalidate(12, inputLat = lat);
+		$$invalidate(13, inputLon = lon);
 		if (pointer) map.removeLayer(pointer);
 
-		if (typeof L !== 'undefined') pointer = L.circleMarker([lat, lon], {
+		if (typeof L !== 'undefined') pointer = L.circleMarker([Math.max(-85, Math.min(85, lat)), lon], {
 			radius: 6,
 			color: '#fff',
 			fillColor: '#183047',
@@ -1889,16 +2208,30 @@ function instance($$self, $$props, $$invalidate) {
 		}).addTo(map);
 	}
 
+	function goToCoordinates() {
+		selectPoint({ lat: inputLat, lon: inputLon });
+		if (!locationError && enabled) map.panTo([Math.max(-85, Math.min(85, selected.lat)), selected.lon]);
+	}
+
+	function stopFrame() {
+		frameEpoch++;
+		frameAbort?.abort();
+		frameAbort = null;
+		frameKey = '';
+		$$invalidate(8, frameLoading = false);
+		$$invalidate(23, activeFrame = null);
+	}
+
 	function toggleEnabled() {
 		if (enabled) {
 			register(config.name, 'high');
 			if (!forecast) void load();
 		} else {
 			release(config.name, 'high');
-			request?.abort();
-			generation++;
+			manifestEpoch++;
+			manifestAbort?.abort();
 			$$invalidate(7, loading = false);
-			clearOverlay();
+			stopFrame();
 
 			if (pointer) {
 				map.removeLayer(pointer);
@@ -1907,63 +2240,140 @@ function instance($$self, $$props, $$invalidate) {
 		}
 	}
 
-	async function load() {
-		request?.abort();
+	async function syncFrame(data, descriptor, on, expired) {
+		if (!on || expired || !data || !descriptor) {
+			stopFrame();
+			return;
+		}
+
+		const key = data.runTime + ':' + descriptor.validTime;
+		if (frameKey === key && (activeFrame || frameLoading)) return;
+		stopFrame();
+		const epoch = ++frameEpoch;
+		frameKey = key;
+		$$invalidate(10, frameError = '');
+		const cached = frames.get(key);
+
+		if (cached) {
+			try {
+				$$invalidate(23, activeFrame = validateFrame(cached, data, descriptor));
+				frames.delete(key);
+				frames.set(key, cached);
+				return;
+			} catch {
+				frames.delete(key);
+			}
+		}
+
 		const abort = new AbortController();
-		request = abort;
-		const epoch = ++generation;
+		frameAbort = abort;
+		$$invalidate(8, frameLoading = true);
+		const timeout = setTimeout(() => abort.abort(), 30000);
+
+		try {
+			const response = await fetch(BASE + descriptor.path, { signal: abort.signal });
+			if (!response.ok) throw Error('Forecast period unavailable (HTTP ' + response.status + ')');
+			const decoded = await decodeFrameResponse(response);
+			const frame = validateFrame(decoded, data, descriptor);
+			if (destroyed || epoch !== frameEpoch || !enabled) return;
+			frames.set(key, frame);
+			while (frames.size > 4) frames.delete(frames.keys().next().value);
+			$$invalidate(23, activeFrame = frame);
+		} catch(err) {
+			if (destroyed || epoch !== frameEpoch) return;
+
+			$$invalidate(10, frameError = err?.name === 'AbortError'
+			? 'Forecast period request timed out.'
+			: String(err?.message || err));
+
+			$$invalidate(23, activeFrame = null);
+			frameKey = '';
+		} finally {
+			clearTimeout(timeout);
+			if (epoch === frameEpoch) $$invalidate(8, frameLoading = false);
+		}
+	}
+
+	async function load() {
+		manifestAbort?.abort();
+		const abort = new AbortController();
+		manifestAbort = abort;
+		const epoch = ++manifestEpoch;
 		$$invalidate(7, loading = true);
-		$$invalidate(8, error = '');
+		$$invalidate(9, error = '');
+		$$invalidate(10, frameError = '');
 		const timeout = setTimeout(() => abort.abort(), 20000);
 
 		try {
-			const response = await fetch(DATA_URL + '?t=' + Math.floor(Date.now() / 300000), { signal: abort.signal });
+			const response = await fetch(BASE + 'latest.json?t=' + Math.floor(Date.now() / 300000), { signal: abort.signal });
 
 			if (!response.ok) throw Error(response.status === 404
-			? 'Forecast file not yet available. Data ingestion must succeed first.'
+			? 'Global forecast not yet available. Global ingestion must succeed first.'
 			: 'Forecast server returned HTTP ' + response.status);
 
 			const text = await response.text();
-			if (text.length > 8000000) throw Error('Forecast file exceeds size limit');
-			const loaded = validateForecast(JSON.parse(text));
-			if (destroyed || epoch !== generation || !enabled) return;
+			if (text.length > 100000) throw Error('Forecast manifest exceeds size limit');
+			const loaded = validateManifest(JSON.parse(text));
+			if (forecast && Date.parse(loaded.runTime) < Date.parse(forecast.runTime)) throw Error('Server returned an older model run');
+			if (destroyed || epoch !== manifestEpoch || !enabled) return;
+			stopFrame();
+			if (forecast?.runTime !== loaded.runTime) frames.clear();
 			$$invalidate(0, forecast = loaded);
-			$$invalidate(18, now = Date.now());
+			$$invalidate(25, now = Date.now());
 		} catch(err) {
-			if (destroyed || epoch !== generation) return;
+			if (destroyed || epoch !== manifestEpoch) return;
 
-			$$invalidate(8, error = err?.name === 'AbortError'
+			$$invalidate(9, error = err?.name === 'AbortError'
 			? 'Forecast request timed out or was cancelled.'
 			: String(err?.message || err));
 
-			// A failed refresh cannot leave a successful-looking obsolete layer.
 			$$invalidate(0, forecast = null);
-
-			clearOverlay();
+			stopFrame();
 		} finally {
 			clearTimeout(timeout);
-			if (epoch === generation) $$invalidate(7, loading = false);
+			if (epoch === manifestEpoch) $$invalidate(7, loading = false);
 		}
 	}
 
 	const onopen = params => {
 		$$invalidate(6, hidden = false);
 		if (enabled) register(config.name, 'high');
-		selectPoint(params);
+		if (params) selectPoint(params);
 	};
 
 	onMount(() => {
+		$$invalidate(26, canvas = document.createElement('canvas'));
+
+		Object.assign(canvas.style, {
+			position: 'absolute',
+			left: '0',
+			top: '0',
+			pointerEvents: 'none',
+			zIndex: '390'
+		});
+
+		canvas.setAttribute('aria-hidden', 'true');
+		map.getContainer().appendChild(canvas);
 		singleclick.on(config.name, selectPoint);
 		register(config.name, 'high');
-		$$invalidate(17, timestamp = Number(store.get('timestamp')) || Date.now());
+		$$invalidate(24, timestamp = Number(store.get('timestamp')) || Date.now());
 
 		timestampListener = store.on('timestamp', () => {
-			$$invalidate(17, timestamp = Number(store.get('timestamp')));
+			$$invalidate(24, timestamp = Number(store.get('timestamp')));
 		});
+
+		map.on('move', scheduleRender);
+		map.on('zoom', scheduleRender);
+		map.on('resize', scheduleRender);
+
+		if (typeof ResizeObserver !== 'undefined') {
+			resizeObserver = new ResizeObserver(() => scheduleRender());
+			resizeObserver.observe(map.getContainer());
+		}
 
 		timer = setInterval(
 			() => {
-				$$invalidate(18, now = Date.now());
+				$$invalidate(25, now = Date.now());
 			},
 			60000
 		);
@@ -1980,14 +2390,22 @@ function instance($$self, $$props, $$invalidate) {
 
 	onDestroy(() => {
 		destroyed = true;
-		generation++;
-		request?.abort();
+		manifestEpoch++;
+		manifestAbort?.abort();
+		stopFrame();
+		frames.clear();
 		clearInterval(timer);
 		clearInterval(refreshTimer);
+		if (drawRequest) cancelAnimationFrame(drawRequest);
+		resizeObserver?.disconnect();
+		canvas?.remove();
+		$$invalidate(26, canvas = null);
+		map.off('move', scheduleRender);
+		map.off('zoom', scheduleRender);
+		map.off('resize', scheduleRender);
 		singleclick.off(config.name, selectPoint);
 		release(config.name, 'high');
 		if (timestampListener != null) store.off(timestampListener);
-		clearOverlay();
 		if (pointer) map.removeLayer(pointer);
 	});
 
@@ -2014,25 +2432,39 @@ function instance($$self, $$props, $$invalidate) {
 		}
 	};
 
+	function input2_input_handler() {
+		inputLat = to_number(this.value);
+		$$invalidate(12, inputLat);
+	}
+
+	function input3_input_handler() {
+		inputLon = to_number(this.value);
+		$$invalidate(13, inputLon);
+	}
+
 	const click_handler_2 = item => store.set('timestamp', Date.parse(item.validTime));
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty[0] & /*forecast, now*/ 262145) {
-			$$invalidate(4, stale = !!forecast && (now - Date.parse(forecast.runTime) > MAX_RUN_AGE_MS || Date.parse(forecast.frames.at(-1).end) <= now));
+		if ($$self.$$.dirty[0] & /*forecast, now*/ 33554433) {
+			$$invalidate(5, stale = !!forecast && (now - Date.parse(forecast.runTime) > MAX_RUN_AGE_MS || Date.parse(forecast.frames.at(-1).end) <= now));
 		}
 
-		if ($$self.$$.dirty[0] & /*enabled, stale, forecast, timestamp*/ 131091) {
-			$$invalidate(5, frame = enabled && !stale ? frameAt(forecast, timestamp) : null);
+		if ($$self.$$.dirty[0] & /*enabled, stale, forecast, timestamp*/ 16777251) {
+			$$invalidate(4, desired = enabled && !stale ? frameAt(forecast, timestamp) : null);
 		}
 
-		if ($$self.$$.dirty[0] & /*forecast, frame, selected*/ 41) {
-			$$invalidate(9, sample = forecast && frame
-			? samplePoint(forecast, frame, selected.lat, selected.lon)
+		if ($$self.$$.dirty[0] & /*forecast, desired, enabled, stale*/ 51) {
+			void syncFrame(forecast, desired, enabled, stale);
+		}
+
+		if ($$self.$$.dirty[0] & /*forecast, desired, activeFrame, selected*/ 8388633) {
+			$$invalidate(14, sample = forecast && desired && activeFrame && activeFrame.validTime === desired.validTime
+			? samplePoint(forecast, activeFrame, selected.lat, selected.lon)
 			: null);
 		}
 
-		if ($$self.$$.dirty[0] & /*forecast, enabled, frame, showDust, stale*/ 55) {
-			if (forecast || !enabled) renderDust(frame, enabled && showDust && !stale);
+		if ($$self.$$.dirty[0] & /*canvas, forecast, activeFrame, enabled, showDust, stale, desired*/ 75497527) {
+			if (canvas) scheduleRender(forecast, activeFrame, enabled, showDust, stale, desired);
 		}
 	};
 
@@ -2041,27 +2473,37 @@ function instance($$self, $$props, $$invalidate) {
 		enabled,
 		showDust,
 		selected,
+		desired,
 		stale,
-		frame,
 		hidden,
 		loading,
+		frameLoading,
 		error,
+		frameError,
+		locationError,
+		inputLat,
+		inputLon,
 		sample,
 		places,
 		displayTime,
 		format,
 		selectPoint,
+		goToCoordinates,
 		toggleEnabled,
 		load,
 		onopen,
+		activeFrame,
 		timestamp,
 		now,
+		canvas,
 		func,
 		click_handler,
 		click_handler_1,
 		input0_change_handler,
 		input1_change_handler,
 		change_handler,
+		input2_input_handler,
+		input3_input_handler,
 		click_handler_2
 	];
 }
@@ -2069,11 +2511,11 @@ function instance($$self, $$props, $$invalidate) {
 class PluginEntry extends SvelteComponent {
 	constructor(options) {
 		super();
-		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 16 }, add_css, [-1, -1]);
+		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 22 }, add_css, [-1, -1]);
 	}
 
 	get onopen() {
-		return this.$$.ctx[16];
+		return this.$$.ctx[22];
 	}
 }
 
