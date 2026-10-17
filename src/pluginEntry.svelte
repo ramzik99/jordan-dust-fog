@@ -42,7 +42,8 @@
     for (let y = 0; y < ys.length; y++) for (let x = 0; x < xs.length; x++) {
       const color = dustColor(active.dustSurface[y][x]);
       if (!color) continue;
-      L.rectangle([[ys[y] - dy, xs[x] - dx], [ys[y] + dy, xs[x] + dx]], {
+      L.polygon([[ys[y] - dy, xs[x] - dx], [ys[y] - dy, xs[x] + dx],
+        [ys[y] + dy, xs[x] + dx], [ys[y] + dy, xs[x] - dx]], {
         pane: 'jordan-dust', stroke: false, fillColor: color, fillOpacity: 0.48, interactive: false,
       }).addTo(next);
     }
