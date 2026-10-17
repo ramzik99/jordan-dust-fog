@@ -27,5 +27,12 @@ class IngestionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ingest.make_intervals([times[0], times[1] + timedelta(hours=1)], run)
 
+    def test_initial_mean_before_run_does_not_shift_forecast_times(self):
+        run = datetime(2026, 10, 17, 6, tzinfo=timezone.utc)
+        times = [run - timedelta(minutes=90), run + timedelta(minutes=90)]
+        bounds = ingest.make_intervals(times, run)
+        self.assertEqual(bounds[0], (run - timedelta(hours=3), run))
+        self.assertEqual(bounds[1], (run, run + timedelta(hours=3)))
+
 if __name__ == '__main__':
     unittest.main()

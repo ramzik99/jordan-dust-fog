@@ -42,8 +42,8 @@ def make_intervals(times, run):
     if any(b - a != timedelta(hours=3) for a, b in zip(times, times[1:])):
         raise ValueError('Unexpected GEOS sampling cadence')
     intervals = [(t - timedelta(minutes=90), t + timedelta(minutes=90)) for t in times]
-    if intervals[0][0] < run:
-        raise ValueError('Forecast interval predates pinned run')
+    # GEOS includes an initial mean ending at the forecast initialization.
+    # Preserve its real time bounds here; omit it when selecting forecast frames.
     return intervals
 
 def read_cycle(token, run, now):
@@ -71,7 +71,7 @@ def read_cycle(token, run, now):
         intervals = make_intervals(times, run)
         frames = []
         for i, (start, end) in enumerate(intervals):
-            if end <= now or start > run + timedelta(hours=120):
+            if start < run or end <= now or start > run + timedelta(hours=120):
                 continue
             frame = {'start': iso(start), 'end': iso(end), 'validTime': iso(times[i])}
             for source, (target, factor) in VARIABLES.items():
