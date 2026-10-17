@@ -1,0 +1,25 @@
+name: Probe NASA data access
+on:
+  push:
+    paths: ['.github/workflows/probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read one dust grid value without scientific dependencies
+        run: |
+          python -u - <<'PY'
+          import urllib.request
+          base = 'https://opendap.nccs.nasa.gov/dods/GEOS-5/fp/0.25_deg/fcast/tavg3_2d_aer_Nx.latest'
+          url = base + '.ascii?dusmass%5B0:1:0%5D%5B488:1:488%5D%5B690:1:690%5D'
+          print('Diagnostic scalar request only; this is not a validated live forecast.')
+          with urllib.request.urlopen(url, timeout=25) as response:
+              body = response.read(16000).decode('utf-8')
+          print(body)
+          if 'dusmass' not in body.lower() or 'error {' in body.lower():
+              raise RuntimeError('NASA returned no dust variable')
+          PY
