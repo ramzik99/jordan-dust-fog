@@ -3,6 +3,7 @@
 No source errors are replaced by synthetic/zero data. Run with --output data/latest.json.
 """
 import argparse
+import gzip
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -46,7 +47,7 @@ def make_intervals(times, run):
     # Preserve its real time bounds here; omit it when selecting forecast frames.
     return intervals
 
-def read_cycle(token, run, now):
+def read_cycle(token, run, now, global_mode=False):
     import cftime
     import numpy as np
     import xarray as xr
@@ -60,8 +61,10 @@ def read_cycle(token, run, now):
             accepted = ('kgm-3', 'kg/m3', 'kgm^-3', 'kg/m^3') if key != 'duexttau' else ('1', 'dimensionless')
             if declared and declared not in accepted:
                 raise ValueError(f'Unexpected source units for {key}: {declared}')
-        # Includes Jordan and an upwind buffer; source grid remains unchanged.
-        region = ds[list(VARIABLES)].sel(lat=slice(28, 34), lon=slice(34, 40)).load()
+        # Striding is sent to OPeNDAP: the global preview samples native GEOS
+        # nodes every 1.25 degrees; it does not download the entire native globe.
+        region = (ds[list(VARIABLES)].isel(lat=slice(None, None, 5), lon=slice(None, None, 4))
+            if global_mode else ds[list(VARIABLES)].sel(lat=slice(28, 34), lon=slice(34, 40))).load()
         ys, xs = region.lat.values.tolist(), region.lon.values.tolist()
         if len(ys) < 2 or len(xs) < 2 or not all(b > a for a, b in zip(ys, ys[1:])) or not all(b > a for a, b in zip(xs, xs[1:])):
             raise ValueError('Invalid source coordinate grid')
@@ -83,15 +86,65 @@ def read_cycle(token, run, now):
         return {'schemaVersion': 1, 'source': 'NASA GEOS-FP', 'datasetUrl': url,
             'runTime': iso(run), 'retrievedAt': iso(now), 'averaging': '3-hour mean, timestamp at interval centre',
             'nativeResolution': {'latitudeDegrees': 0.25, 'longitudeDegrees': 0.3125},
+            'coverage': 'global' if global_mode else 'Jordan buffer',
+            'sampling': {'latitudeDegrees': 1.25 if global_mode else 0.25,
+                'longitudeDegrees': 1.25 if global_mode else 0.3125,
+                'method': 'native-node subsampling' if global_mode else 'native grid'},
             'units': {'dustSurface': 'ug m-3', 'dustFine': 'ug m-3', 'dustAod': '1'},
             'unitBasis': 'GEOS-FP file specification; checked against variable units when supplied',
             'latitudes': ys, 'longitudes': xs, 'frames': frames,
             'fog': {'status': 'unavailable', 'reason': 'Forecast integration pending'},
             'satellite': {'status': 'unavailable', 'reason': 'Observation feed not connected'}}
 
+def write_global(data, output):
+    """Write immutable compressed frames first; publish their manifest last."""
+    if len(data['latitudes']) != 145 or len(data['longitudes']) != 288:
+        raise ValueError('Expected a 145 by 288 global overview grid')
+    if data['latitudes'][0] != -90 or data['latitudes'][-1] != 90 or data['longitudes'][0] != -180 or data['longitudes'][-1] != 178.75:
+        raise ValueError('Global grid does not cover the expected globe')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    previous_run = None
+    if output.exists():
+        previous = json.loads(output.read_text(encoding='utf-8'))
+        previous_run = previous['runTime']
+        if previous_run > data['runTime']:
+            raise ValueError('Refusing to replace global data with an older run')
+    token = datetime.fromisoformat(data['runTime'].replace('Z', '+00:00')).strftime('%Y%m%d_%H')
+    run_dir = output.parent / 'runs' / token
+    run_dir.mkdir(parents=True, exist_ok=True)
+    descriptors = []
+    for frame in data['frames']:
+        stamp = datetime.fromisoformat(frame['validTime'].replace('Z', '+00:00')).strftime('%Y%m%dT%H%M%SZ')
+        relative = f'runs/{token}/{stamp}.json.gz'
+        payload = {'schemaVersion': 2, 'source': data['source'], 'runTime': data['runTime'], **frame}
+        target = output.parent / relative
+        temporary = target.with_suffix('.gz.tmp')
+        raw = json.dumps(payload, allow_nan=False, separators=(',', ':')).encode('utf-8')
+        temporary.write_bytes(gzip.compress(raw, compresslevel=6, mtime=0))
+        temporary.replace(target)
+        descriptors.append({key: frame[key] for key in ('start', 'end', 'validTime')} | {'path': relative})
+    manifest = {**data, 'schemaVersion': 2, 'frames': descriptors}
+    temporary = output.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(manifest, allow_nan=False, separators=(',', ':')), encoding='utf-8')
+    temporary.replace(output)
+    # Retain the preceding manifest's run for clients already viewing it.
+    keep = {token}
+    if previous_run:
+        keep.add(datetime.fromisoformat(previous_run.replace('Z', '+00:00')).strftime('%Y%m%d_%H'))
+    runs = (output.parent / 'runs').resolve()
+    for old in runs.iterdir():
+        if old.name in keep or not re.fullmatch(r'\d{8}_\d{2}', old.name) or old.is_symlink() or not old.is_dir():
+            continue
+        for item in old.glob('*.json.gz'):
+            if item.resolve().is_relative_to(runs):
+                item.unlink()
+        if not any(old.iterdir()):
+            old.rmdir()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', default='data/latest.json')
+    parser.add_argument('--global', dest='global_mode', action='store_true')
     args = parser.parse_args()
     socket.setdefaulttimeout(45)
     now = datetime.now(UTC)
@@ -104,7 +157,7 @@ def main():
     for run, token in cycles[:4]:
         try:
             print(f'Checking GEOS-FP cycle {token}', flush=True)
-            data = read_cycle(token, run, now)
+            data = read_cycle(token, run, now, args.global_mode)
             break
         except Exception as exc:
             print(f'Cycle {token} unavailable: {exc}', flush=True)
@@ -112,6 +165,10 @@ def main():
     else:
         raise RuntimeError('GEOS retrieval failed: ' + '; '.join(errors))
     output = Path(args.output)
+    if args.global_mode:
+        write_global(data, output)
+        print(f"Saved {len(data['frames'])} global forecast frames from {data['runTime']}")
+        return
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.json.tmp')
     temporary.write_text(json.dumps(data, allow_nan=False, separators=(',', ':')), encoding='utf-8')

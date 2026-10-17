@@ -24,14 +24,18 @@ jobs:
           node-version: '22'
       - run: pip install -r requirements.txt
       - run: python scripts/ingest_geos.py
+      - name: Retrieve global overview
+        run: python scripts/ingest_geos.py --global --output data/global/latest.json
       - name: Validate forecast contract
         run: node --input-type=module -e "import {readFileSync} from 'node:fs'; import {validateForecast} from './src/forecast.mjs'; validateForecast(JSON.parse(readFileSync('data/latest.json','utf8')));"
-      - name: Commit valid forecast only
+      - name: Validate every global forecast period
+        run: node scripts/validate-global.mjs
+      - name: Commit valid regional and global forecasts
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/latest.json
+          git add -A data/latest.json data/global
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Update validated GEOS-FP regional dust forecast'
+          git commit -m 'Update validated GEOS-FP regional and global dust forecasts'
           git pull --rebase origin main
           git push origin HEAD:main

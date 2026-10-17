@@ -1,38 +1,50 @@
-# Jordan Dust & Fog for Windy
+# Global Dust & Fog for Windy
 
-Experimental Windy plugin by Ramzi Kandah. **Version 0.1.0 implements a dust-forecast frontend and GEOS-FP ingestion pipeline. Fog forecasting, satellite analysis, ground confirmation and calibrated alerts are not implemented yet.** No operational warning capability or forecast skill is claimed.
+Experimental Windy plugin by Ramzi Kandah, hosted in the original jordan-dust-fog repository. **Version 0.2.0 adds worldwide dust forecasts. Fog forecasting, satellite analysis, ground confirmation and calibrated alerts are not implemented. This is an unpublished development preview.**
 
-## First version
+## Global dust preview
 
-- NASA GEOS-FP surface dust, fine dust (PM₂.₅ dust component), and column dust optical depth.
-- Native-grid dust map over a buffered region (28–34°N, 34–40°E), including Jordan and neighbouring areas.
-- Windy timeline integration and explicit three-hour averaging intervals.
-- Map-click point inspection and eight named Jordan locations.
-- Unknown values stay unknown; expired and stale forecasts are rejected.
-- Model-run time, retrieval time, native resolution and device-local valid times are visible.
-- Scheduled retrieval every six hours in GitHub Actions; only validated data is committed.
+- Worldwide NASA GEOS-FP surface dust, fine dust (PM₂.₅ dust component), and column dust optical depth.
+- A 1.25° × 1.25° overview sampled directly from the native 0.25° latitude × 0.3125° longitude grid. These are sampled model nodes, not averages or finer-resolution estimates.
+- Click anywhere on the globe, use a named location, or enter signed latitude and longitude.
+- Correct longitude wrapping at the date line, including repeated world views. Polar values are available by coordinates; the Mercator map itself ends near 85° latitude.
+- One compressed forecast period loads at a time. Up to four recently viewed periods are cached.
+- A canvas renders the visible grid without creating tens of thousands of map polygons.
+- The Windy timeline and interval buttons select actual supported three-hour means. No extrapolation beyond available GEOS periods.
+- Unknown values stay unknown. Expired data and model runs older than 36 hours are hidden.
+- Model-run and retrieval timestamps are visible in the device timezone.
 
-## Data status
+The global overview intentionally samples more coarsely than native GEOS. It may miss local gradients and dust features between sampled nodes. Zooming in does not increase forecast resolution.
 
-**Live numerical retrieval verified on 2026-10-17T09:11:16Z.** GitHub Actions successfully downloaded a regional subset from the 2026-10-16T18:00:00Z GEOS-FP cycle and validated the exported forecast contract. The first verified export contained 5 three-hour frames on a 25 × 20 native grid, from 2026-10-17T09:00:00Z to 2026-10-18T00:00:00Z. This is a technical retrieval check, not forecast-accuracy validation. The available lead time varies by cycle; the plugin shows only represented source intervals. Local network restrictions still prevent direct retrieval from the coding environment.
+## Data pipeline
 
-Plugin default data URL:
+The six-hour GitHub Actions ingestion job downloads a dated GEOS-FP cycle, exports a small global manifest and separate gzip-compressed forecast files, validates every frame, then commits all files together. Initial averaging intervals before forecast initialization are omitted without shifting timestamps. Incomplete newer cycles can fall back to a recent complete cycle, but an already-exported global forecast cannot be replaced by an older run.
 
-https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/main/data/latest.json
+Global manifest:
 
-If ingestion fails or the forecast expires, the UI reports unavailable or stale data. No synthetic sample forecast is installed as live data.
+https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/main/data/global/latest.json
 
-Source catalogue:
+The manifest preserves units, native resolution, sampling method, run time, retrieval time and represented intervals. Each frame path is pinned to a dated run and valid time. The browser validates the manifest and selected frame, limits compressed and decompressed sizes, cancels obsolete requests, and never presents a previous period as a new one. The current and preceding manifest runs are retained for clients already viewing them. Repository history still grows with forecast updates; this is prototype hosting rather than a long-term forecast archive.
+
+The earlier regional data feed remains available at data/latest.json for v0.1.0 preview compatibility.
+
+NASA catalogue:
 
 https://opendap.nccs.nasa.gov/dods/GEOS-5/fp/0.25_deg/fcast/tavg3_2d_aer_Nx/
 
-The ingestion script discovers a dated cycle, selects up to four recent cycles if newer cycles are incomplete, and pins each retrieval to its dated dataset. It refuses cycles older than 36 hours, preserves native coordinates and checks the three-hour cadence. Initial averaging intervals before the forecast run are omitted without shifting valid times. It converts DUSMASS and DUSMASS25 from kg/m³ to µg/m³. Source units are checked if supplied; otherwise the documented GEOS-FP product units are recorded as the basis. Fill values, negative values and nonfinite values export as null. A validated file replaces the previous file atomically; a failed job never writes a zero forecast.
+Units: DUSMASS and DUSMASS25 are converted from kg/m³ to µg/m³; DUEXTTAU is dimensionless. Source units are checked when supplied, with the GEOS-FP specification recorded as the basis otherwise. Missing, fill, negative and nonfinite values remain null. No synthetic forecast is installed as live data. Forecast accuracy has not been validated against observations.
 
-GEOS-FP is 0.25° latitude × 0.3125° longitude in this collection. The frontend shows native cells and nearest-cell values rather than implying street-level resolution.
+## Test before publishing
 
-## Build and check
+Open https://www.windy.com/developer-mode in a desktop browser and load the pinned JavaScript preview URL provided after a successful build. The preview branch is refreshed by the Check plugin workflow; this does not publish the plugin to Windy's directory. The workflow verifies JavaScript MIME type and browser cross-origin access through the CDN.
 
-Requires Node 22+ and Python 3.12+ for ingestion.
+Choose Amman, London, New York, Delhi, Sydney, Cape Town or São Paulo, or enter coordinates and select Go. Enable Dust map and select an available forecast interval. Try the date line at 179.9°E and −180.1° longitude. A compatible browser must support DecompressionStream; unsupported browsers show an explicit error.
+
+The latest preview URL will be recorded here after its build and live global data checks finish.
+
+## Development and verification
+
+Node 22+ and Python 3.12+:
 
 ```sh
 npm install
@@ -41,52 +53,23 @@ python -m unittest discover -s test -p 'test_*.py'
 npm run build
 ```
 
-For live ingestion:
+Regional and global ingestion:
 
 ```sh
 pip install -r requirements.txt
 python scripts/ingest_geos.py
+python scripts/ingest_geos.py --global --output data/global/latest.json
+node scripts/validate-global.mjs
 ```
 
-For Windy development:
+For local Windy development, run npm start and load https://localhost:9999/plugin.js in developer mode. Build output is in dist/. Windy host interaction and desktop/mobile visual checks are still required; unit tests, source retrieval and compilation do not establish forecast accuracy.
 
-```sh
-npm start
-```
+## Interpretation and remaining work
 
-Build output is in `dist/`. The Check plugin workflow uploads a downloadable build artifact after successful compilation. The plugin is not automatically published to Windy. Browser execution in the Windy host, desktop/mobile appearance and real source values require verification before release.
+Surface dust is modelled dust mass, not total PM₁₀. Fine dust is only the dust contribution to PM₂.₅. Column optical depth is not surface visibility. Map concentration bins are display bins, not health limits or calibrated warning levels.
 
-## Interpretation
+Fog and satellite controls retain unavailable states. The external EUMETSAT viewer link is not an integrated satellite-analysis feed and does not provide worldwide geostationary coverage by itself. Worldwide satellite monitoring will require complementary satellite sources. Satellite low cloud alone cannot confirm fog at the ground.
 
-Surface dust is modelled dust mass, not total PM₁₀. Fine dust is only the dust contribution to PM₂.₅, not total PM₂.₅. Optical depth describes the atmospheric column and is not a direct visibility estimate. Map bins at 100, 300 and 1,000 µg/m³ are visual display bins, not health limits or calibrated warning thresholds. Transparent cells may indicate unavailable data; the panel reports source status.
+Next stages: independent source comparisons, Windy desktop/mobile testing, finer dust data where practical, terrain-aware fog guidance, global satellite observations, surface reports, and validated location-specific alert criteria. There are no push notifications or official warnings. Never commit API keys; future publication credentials belong in GitHub Actions secrets.
 
-Satellite observations and fog forecasting have explicit unavailable states. The EUMETSAT viewer link is an external viewing aid, not an integrated or analysed satellite feed. Ground confirmation must be separate from satellite detection; satellite low cloud alone cannot establish fog at the surface.
-
-## Next implementation stages
-
-1. Independently compare the retrieved GEOS fields with NASA charts and surface observations; numerical access and schema validation now pass.
-2. Test the built plugin in Windy on desktop and mobile.
-3. Connect a verified fog forecast feed, including terrain/cloud intersection and radiation fog.
-4. Connect appropriately licensed Meteosat dust and low-cloud products with observation timestamps.
-5. Add surface reports and calibrate location-specific alert thresholds against Jordanian observations.
-
-No push notifications are currently implemented. Never commit API keys; any future publishing credentials belong in GitHub Actions secrets.
-
-Uses the Windy plugin configuration and build conventions of [Wintry Forecast](https://github.com/ramzik99/wintry-forecast), without modifying that repository.
-
-## Test directly in Windy
-
-No local installation is needed for this development build:
-
-1. Open https://www.windy.com/developer-mode in a desktop browser.
-2. Paste the following JavaScript URL into the plugin URL field and load it:
-
-```text
-https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@8663d4e5b7a2dfa5f1093b71bc23d3208797ca75/plugin.js
-```
-
-3. Select Amman, enable Dust map, and choose an available forecast interval.
-
-This pinned preview was built successfully and its JavaScript MIME type and cross-origin response headers were verified. It has not yet been visually or interactively verified inside the Windy host. Only dust forecasting is implemented in this build. This is a development preview, not a published Windy release.
-
-The `preview` branch is refreshed after successful main-branch checks. To test a later build, replace the commit in the CDN URL with the current preview branch commit; pinned URLs keep each test reproducible.
+The repository and package identifiers retain their original names to preserve existing preview compatibility. Display branding and coverage are global.
