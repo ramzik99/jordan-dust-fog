@@ -73,3 +73,20 @@ Satellite observations and fog forecasting have explicit unavailable states. The
 No push notifications are currently implemented. Never commit API keys; any future publishing credentials belong in GitHub Actions secrets.
 
 Uses the Windy plugin configuration and build conventions of [Wintry Forecast](https://github.com/ramzik99/wintry-forecast), without modifying that repository.
+
+## Test directly in Windy
+
+No local installation is needed for this development build:
+
+1. Open https://www.windy.com/developer-mode in a desktop browser.
+2. Paste the following JavaScript URL into the plugin URL field and load it:
+
+```text
+https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@8663d4e5b7a2dfa5f1093b71bc23d3208797ca75/plugin.js
+```
+
+3. Select Amman, enable Dust map, and choose an available forecast interval.
+
+This pinned preview was built successfully and its JavaScript MIME type and cross-origin response headers were verified. It has not yet been visually or interactively verified inside the Windy host. Only dust forecasting is implemented in this build. This is a development preview, not a published Windy release.
+
+The `preview` branch is refreshed after successful main-branch checks. To test a later build, replace the commit in the CDN URL with the current preview branch commit; pinned URLs keep each test reproducible.
