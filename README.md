@@ -14,19 +14,19 @@ Experimental Windy plugin by Ramzi Kandah. **Version 0.1.0 implements a dust-for
 
 ## Data status
 
-NASA's catalogue and metadata have been read successfully. Direct numerical retrieval from the local coding environment is blocked by DNS/network restrictions. **The first live retrieval is therefore checked by the repository's Refresh GEOS dust forecast workflow. A working download must not be inferred from catalogue access or unit tests.**
+**Live numerical retrieval verified on 2026-10-17T09:11:16Z.** GitHub Actions successfully downloaded a regional subset from the 2026-10-16T18:00:00Z GEOS-FP cycle and validated the exported forecast contract. The first verified export contained 5 three-hour frames on a 25 × 20 native grid, from 2026-10-17T09:00:00Z to 2026-10-18T00:00:00Z. This is a technical retrieval check, not forecast-accuracy validation. The available lead time varies by cycle; the plugin shows only represented source intervals. Local network restrictions still prevent direct retrieval from the coding environment.
 
 Plugin default data URL:
 
 https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/main/data/latest.json
 
-Until ingestion succeeds, the UI reports the forecast as unavailable. No sample forecast is installed as live data.
+If ingestion fails or the forecast expires, the UI reports unavailable or stale data. No synthetic sample forecast is installed as live data.
 
 Source catalogue:
 
 https://opendap.nccs.nasa.gov/dods/GEOS-5/fp/0.25_deg/fcast/tavg3_2d_aer_Nx/
 
-The ingestion script discovers a dated cycle, selects up to four recent cycles if newer cycles are incomplete, and pins each retrieval to its dated dataset. It refuses cycles older than 36 hours, preserves native coordinates and checks the three-hour cadence. It converts DUSMASS and DUSMASS25 from kg/m³ to µg/m³. Source units are checked if supplied; otherwise the documented GEOS-FP product units are recorded as the basis. Fill values, negative values and nonfinite values export as null. A validated file replaces the previous file atomically; a failed job never writes a zero forecast.
+The ingestion script discovers a dated cycle, selects up to four recent cycles if newer cycles are incomplete, and pins each retrieval to its dated dataset. It refuses cycles older than 36 hours, preserves native coordinates and checks the three-hour cadence. Initial averaging intervals before the forecast run are omitted without shifting valid times. It converts DUSMASS and DUSMASS25 from kg/m³ to µg/m³. Source units are checked if supplied; otherwise the documented GEOS-FP product units are recorded as the basis. Fill values, negative values and nonfinite values export as null. A validated file replaces the previous file atomically; a failed job never writes a zero forecast.
 
 GEOS-FP is 0.25° latitude × 0.3125° longitude in this collection. The frontend shows native cells and nearest-cell values rather than implying street-level resolution.
 
@@ -64,7 +64,7 @@ Satellite observations and fog forecasting have explicit unavailable states. The
 
 ## Next implementation stages
 
-1. Verify live GEOS values, units, intervals and model-run freshness against NASA charts.
+1. Independently compare the retrieved GEOS fields with NASA charts and surface observations; numerical access and schema validation now pass.
 2. Test the built plugin in Windy on desktop and mobile.
 3. Connect a verified fog forecast feed, including terrain/cloud intersection and radiation fog.
 4. Connect appropriately licensed Meteosat dust and low-cloud products with observation timestamps.
