@@ -122,7 +122,10 @@ def write_global(data, output):
         raw = json.dumps(payload, allow_nan=False, separators=(',', ':')).encode('utf-8')
         temporary.write_bytes(gzip.compress(raw, compresslevel=6, mtime=0))
         temporary.replace(target)
-        descriptors.append({key: frame[key] for key in ('start', 'end', 'validTime')} | {'path': relative})
+        descriptor = {key: frame[key] for key in ('start', 'end', 'validTime')} | {'path': relative}
+        if 'native' in frame:
+            descriptor['native'] = frame['native']
+        descriptors.append(descriptor)
     manifest = {**data, 'schemaVersion': 2, 'frames': descriptors}
     temporary = output.with_suffix('.json.tmp')
     temporary.write_text(json.dumps(manifest, allow_nan=False, separators=(',', ':')), encoding='utf-8')
