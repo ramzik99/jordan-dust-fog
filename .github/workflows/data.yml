@@ -1,7 +1,7 @@
 name: Refresh GEOS dust forecast
 on:
   push:
-    paths: ['scripts/ingest_geos.py', 'requirements.txt', '.github/workflows/data.yml']
+    paths: ['scripts/ingest_geos.py', 'requirements.txt', '.daprc', '.github/workflows/data.yml']
   workflow_dispatch:
   schedule:
     - cron: '25 4,10,16,22 * * *'
@@ -9,7 +9,7 @@ permissions:
   contents: write
 concurrency:
   group: geos-data
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   ingest:
     runs-on: ubuntu-latest

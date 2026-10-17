@@ -12,7 +12,7 @@ export default {
     { file: 'dist/plugin.min.js', format: 'module', plugins: [terser()] }],
   external: id => id.startsWith('@windy/'),
   plugins: [svelte({ emitCss: false, preprocess: preprocess() }),
-    swc({ include: ['**/*.ts', '**/*.svelte'] }),
+    swc({ include: ['**/*.ts', '**/*.svelte'], sourceMaps: true }),
     resolve({ browser: true, dedupe: ['svelte'], preferBuiltins: false }), commonjs(),
     transformCodeToESMPlugin(),
     process.env.SERVE !== 'false' && serve({ contentBase: 'dist', host: '127.0.0.1', port: 9999,

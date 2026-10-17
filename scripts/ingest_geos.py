@@ -103,9 +103,11 @@ def main():
     errors = []
     for run, token in cycles[:4]:
         try:
+            print(f'Checking GEOS-FP cycle {token}', flush=True)
             data = read_cycle(token, run, now)
             break
         except Exception as exc:
+            print(f'Cycle {token} unavailable: {exc}', flush=True)
             errors.append(f'{token}: {exc}')
     else:
         raise RuntimeError('GEOS retrieval failed: ' + '; '.join(errors))
