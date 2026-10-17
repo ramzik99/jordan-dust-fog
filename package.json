@@ -1,0 +1,14 @@
+{
+  "name": "windy-plugin-jordan-dust-fog",
+  "version": "0.1.0",
+  "description": "Jordan dust forecast guidance using NASA GEOS-FP",
+  "type": "module",
+  "main": "dist/plugin.min.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "rollup -w -c",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "@windycom/plugin-devtools": "3.0.3" }
+}

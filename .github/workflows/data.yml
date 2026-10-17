@@ -1,0 +1,37 @@
+name: Refresh GEOS dust forecast
+on:
+  push:
+    paths: ['scripts/ingest_geos.py', 'requirements.txt', '.github/workflows/data.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '25 4,10,16,22 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: geos-data
+  cancel-in-progress: false
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r requirements.txt
+      - run: python scripts/ingest_geos.py
+      - name: Validate forecast contract
+        run: node --input-type=module -e "import {readFileSync} from 'node:fs'; import {validateForecast} from './src/forecast.mjs'; validateForecast(JSON.parse(readFileSync('data/latest.json','utf8')));"
+      - name: Commit valid forecast only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/latest.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Update validated GEOS-FP regional dust forecast'
+          git pull --rebase origin main
+          git push origin HEAD:main
