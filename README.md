@@ -40,7 +40,13 @@ Open https://www.windy.com/developer-mode in a desktop browser and load the pinn
 
 Choose Amman, London, New York, Delhi, Sydney, Cape Town or São Paulo, or enter coordinates and select Go. Enable Dust map and select an available forecast interval. Try the date line at 179.9°E and −180.1° longitude. A compatible browser must support DecompressionStream; unsupported browsers show an explicit error.
 
-The latest preview URL will be recorded here after its build and live global data checks finish.
+Verified v0.2.0 test URL (paste into Windy developer mode):
+
+```text
+https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@ee4d6a2c8d19650604e5e4499611c72928ae28fe/plugin.js
+```
+
+Live global retrieval and validation passed for the 2026-10-17T00:00:00Z run: 37 three-hour frames, from 2026-10-17T12:00:00Z to 2026-10-22T03:00:00Z. All 16 unit tests and compilation passed. The CDN JavaScript response and browser cross-origin headers were verified. Full interaction and appearance inside the Windy host have not yet been verified.
 
 ## Development and verification
 
