@@ -1,10 +1,20 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Independent GEOS-FP geopotential height, temperature and MSLP isolines for Windy",
   "type": "module",
   "main": "dist/plugin.min.js",
   "license": "MIT",
-  "scripts": { "build": "node scripts/build.mjs", "start": "rollup -w -c", "test": "node --test ../test/contours.test.mjs" },
-  "dependencies": { "@windycom/plugin-devtools": "3.0.3" }
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "rollup -w -c",
+    "test": "node --test test/contours.test.mjs",
+    "test:browser": "python scripts/browser_fixture.py && node test/synoptic-browser.mjs"
+  },
+  "dependencies": {
+    "@windycom/plugin-devtools": "3.0.3"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

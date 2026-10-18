@@ -1,17 +1,17 @@
 const __pluginConfig =  {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icon": "🌐",
   "title": "Synoptic Atlas",
   "description": "Independent GEOS-FP geopotential height, temperature and MSLP isolines, with pressure levels and labels.",
   "author": "Ramzi Kandah",
-  "repository": "https://github.com/ramzik99/jordan-dust-fog/tree/main/synoptic-atlas",
+  "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": false,
   "listenToSingleclick": false,
-  "built": 1792353241806,
-  "builtReadable": "2026-10-18T19:54:01.806Z"
+  "built": 1792353575724,
+  "builtReadable": "2026-10-18T19:59:35.724Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -673,10 +673,10 @@ if (typeof window !== 'undefined')
 	(window.__svelte || (window.__svelte = { v: new Set() })).v.add(PUBLIC_VERSION);
 
 const config = {
-    version: '1.0.0',
+    version: '1.0.1',
     title: 'Synoptic Atlas'};
 
-const MAX_RUN_AGE_MS = 36 * 3600000;
+const MAX_RUN_AGE_MS = 36 * 60 * 60 * 1000;
 
 async function decodeFrameResponse(response) {
   if (typeof DecompressionStream === 'undefined') throw Error('This browser does not support compressed forecast files');
