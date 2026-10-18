@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 jobs:
+  satellite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -u scripts/check_satellite.py
   check:
     runs-on: ubuntu-latest
     steps:
@@ -17,8 +23,16 @@ jobs:
           node-version: '22'
       - run: npm install --ignore-scripts
       - run: npm test
+      - run: pip install 'numpy>=2,<3' 'Pillow>=11,<13'
       - run: python -m unittest discover -s test -p 'test_*.py'
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-smoke
+          path: test-output/
       - uses: actions/upload-artifact@v4
         with:
           name: jordan-dust-fog-plugin

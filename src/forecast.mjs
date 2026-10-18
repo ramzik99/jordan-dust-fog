@@ -44,7 +44,11 @@ export function samplePoint(data, frame, lat, lon) {
   const nearest = (a, value) => a.reduce((best, v, i) => Math.abs(v - value) < Math.abs(a[best] - value) ? i : best, 0);
   const y = nearest(ys, lat);
   const x = global ? xs.reduce((best, v, i) => Math.abs(wrapLongitude(v - lon)) < Math.abs(wrapLongitude(xs[best] - lon)) ? i : best, 0) : nearest(xs, lon);
-  return { lat: ys[y], lon: xs[x], ...Object.fromEntries(FIELDS.map(k => [k, frame[k][y][x]])) };
+  return { lat: ys[y], lon: xs[x], ...Object.fromEntries(FIELDS.map(k => [k, fieldValue(frame[k], y, x, xs.length)])) };
+}
+export function fieldValue(values, y, x, width) {
+  const value = ArrayBuffer.isView(values) ? values[y * width + x] : values?.[y]?.[x];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 // Display bins only: not visibility thresholds, health limits or calibrated warning levels.
 export const DUST_BINS = [
