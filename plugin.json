@@ -1,8 +1,8 @@
 {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "icon": "🌫️",
-  "title": "Synoptic Atlas",
+  "title": "GEOS Dust",
   "description": "Global GEOS-FP dust, independent geopotential height, temperature and MSLP contours, and satellite imagery.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
@@ -10,6 +10,6 @@
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792340039996,
-  "builtReadable": "2026-10-18T16:13:59.996Z"
+  "built": 1792353149300,
+  "builtReadable": "2026-10-18T19:52:29.300Z"
 }

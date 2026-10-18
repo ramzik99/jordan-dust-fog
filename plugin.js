@@ -1,8 +1,8 @@
 const __pluginConfig =  {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "icon": "🌫️",
-  "title": "Synoptic Atlas",
+  "title": "GEOS Dust",
   "description": "Global GEOS-FP dust, independent geopotential height, temperature and MSLP contours, and satellite imagery.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
@@ -10,8 +10,8 @@ const __pluginConfig =  {
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792340039912,
-  "builtReadable": "2026-10-18T16:13:59.912Z"
+  "built": 1792353149247,
+  "builtReadable": "2026-10-18T19:52:29.247Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -1403,7 +1403,7 @@ function create_else_block(ctx) {
 			section = element("section");
 			header = element("header");
 			div0 = element("div");
-			div0.innerHTML = `<strong class="svelte-1b6hqhz">Synoptic Atlas</strong><small class="svelte-1b6hqhz">NASA GEOS-FP · v1.1.0</small>`;
+			div0.innerHTML = `<strong class="svelte-1b6hqhz">GEOS Dust</strong><small class="svelte-1b6hqhz">NASA GEOS-FP · v1.1.1</small>`;
 			button0 = element("button");
 			button0.textContent = "−";
 			t3 = space();
@@ -1583,7 +1583,7 @@ function create_else_block(ctx) {
 			attr(button7, "class", "svelte-1b6hqhz");
 			attr(footer, "class", "svelte-1b6hqhz");
 			attr(section, "class", "panel svelte-1b6hqhz");
-			attr(section, "aria-label", "Synoptic Atlas");
+			attr(section, "aria-label", "GEOS Dust");
 		},
 		m(target, anchor) {
 			insert(target, section, anchor);
@@ -1990,7 +1990,7 @@ function create_if_block(ctx) {
 	return {
 		c() {
 			button = element("button");
-			button.textContent = "🌫 Synoptic Atlas";
+			button.textContent = "🌫 GEOS Dust";
 			attr(button, "class", "restore svelte-1b6hqhz");
 		},
 		m(target, anchor) {

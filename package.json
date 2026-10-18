@@ -1,7 +1,7 @@
 {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "1.1.0",
-  "description": "Synoptic Atlas: worldwide GEOS-FP dust, meteorological contours and satellite observations",
+  "version": "1.1.1",
+  "description": "GEOS Dust: worldwide GEOS-FP dust, meteorological contours and satellite observations",
   "type": "module",
   "main": "dist/plugin.min.js",
   "license": "MIT",
