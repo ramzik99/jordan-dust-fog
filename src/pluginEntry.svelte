@@ -245,8 +245,8 @@
   <section class="panel" aria-label="Dust forecast">
     <header><div><strong>Dust forecast</strong><small>NASA GEOS-FP · v1.0.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
     <nav aria-label="Dust view"><button class:active={view === 'forecast'} on:click={() => setView('forecast')}>Forecast</button><button class:active={view === 'satellite'} on:click={() => setView('satellite')}>Satellite</button><label><input aria-label="Enable plugin" type="checkbox" bind:checked={enabled} on:change={toggleEnabled} />On</label></nav>
-    <label class="place">Place<select aria-label="Location" value={selected.name} on:change={e => { const p = [...places, ...saved].find(v => v.name === e.currentTarget.value); if (p) { selectPoint(p); map.panTo([Math.max(-85, Math.min(85, p.lat)), p.lon]); } }} disabled={!enabled}>
-      {#if ![...places, ...saved].some(p => p.name === selected.name)}<option>{selected.name}</option>{/if}
+    <label class="place">Place<select aria-label="Location" bind:value={selected.name} on:change={e => { const p = [...places, ...saved].find(v => v.name === e.currentTarget.value); if (p) { selectPoint(p); map.panTo([Math.max(-85, Math.min(85, p.lat)), p.lon]); } }} disabled={!enabled}>
+      {#if ![...places, ...saved].some(p => p.name === selected.name)}<option value={selected.name}>{selected.name}</option>{/if}
       {#each places as p}<option value={p.name}>{p.name}</option>{/each}
       {#each saved.filter(p => !places.some(v => v.name === p.name)) as p}<option value={p.name}>{p.name}</option>{/each}
     </select></label>

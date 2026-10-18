@@ -68,7 +68,9 @@ try {
     await page.getByLabel('Location', { exact: true }).selectOption('Sydney');
     await page.getByLabel('Latitude', { exact: true }).fill('0'); await page.getByLabel('Longitude', { exact: true }).fill('540'); await page.getByRole('button', { name: 'Go', exact: true }).click();
     assert.match(await page.locator('.point-name').innerText(), /-180.000/);
+    assert.match(await page.getByLabel('Location', { exact: true }).inputValue(), /Point 0.000, -180.000/);
     await page.getByRole('button', { name: 'Save place', exact: true }).click(); await page.getByRole('button', { name: 'Unsave', exact: true }).click(); scenarios++;
+    assert.match(await page.getByLabel('Location', { exact: true }).inputValue(), /Point 0.000, -180.000/);
     await page.evaluate(t => testHost.store.set('timestamp', t), Date.parse(manifest.frames[1].validTime));
     await value.filter({ hasText: '0.40' }).waitFor();
     await page.getByLabel('Dust field').selectOption('dustSurface'); await value.filter({ hasText: '300.0' }).waitFor(); scenarios++;
@@ -76,6 +78,7 @@ try {
     await page.getByRole('button', { name: 'Load full point forecast', exact: true }).click();
     await page.locator('tbody tr').nth(1).waitFor();
     await page.waitForFunction(() => document.querySelector('tbody')?.textContent.includes('40.0') && document.querySelector('tbody')?.textContent.includes('300.0')); scenarios++;
+    await page.locator('.panel').evaluate(el => el.scrollTop = 0);
     await page.screenshot({ path: `test-output/forecast-${viewport.width}.png` });
     await page.getByRole('button', { name: 'Satellite', exact: true }).click();
     await page.getByTestId('observation-stamp').waitFor();
