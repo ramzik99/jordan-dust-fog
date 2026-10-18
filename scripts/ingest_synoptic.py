@@ -1,6 +1,6 @@
 """Publish sampled GEOS-FP instantaneous meteorology for independent isolines."""
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import gzip
 import json
 from pathlib import Path
@@ -8,7 +8,11 @@ import re
 import socket
 import urllib.request
 import numpy as np
-from ingest_geos import BASE, UTC, iso
+BASE = 'https://opendap.nccs.nasa.gov/dods/GEOS-5/fp/0.25_deg/fcast'
+UTC = timezone.utc
+
+def iso(value):
+    return value.astimezone(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 COLLECTION = 'inst3_3d_asm_Np'
 LEVELS = [925, 850, 700, 500, 300]

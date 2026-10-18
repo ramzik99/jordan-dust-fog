@@ -1,5 +1,5 @@
 import { CONTOUR_BASE, PRESSURE_LEVELS, CONTOUR_FIELDS, validateContourManifest, contourSnapshot, contourPath, validateContourField } from '../src/contours.mjs';
-import { decodeFrameResponse } from '../src/forecast.mjs';
+import { decodeFrameResponse } from '../src/contourData.mjs';
 async function get(path) {
   const response=await fetch(CONTOUR_BASE+path,{headers:{Origin:'https://www.windy.com'},signal:AbortSignal.timeout(60000)});
   if(!response.ok || response.headers.get('Access-Control-Allow-Origin')!=='*') throw Error('Contour delivery/CORS unavailable: '+path);

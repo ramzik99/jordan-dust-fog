@@ -2,7 +2,7 @@ name: Check standalone Synoptic Atlas
 on:
   push:
     branches: [main]
-    paths: ['synoptic-atlas/**', 'src/contours.mjs', 'src/forecast.mjs', 'src/globalMap.mjs', 'test/synoptic-browser.mjs', 'scripts/browser_fixture.py', '.github/workflows/synoptic-plugin.yml']
+    paths: ['src/**', 'scripts/**', 'test/**', 'package.json', 'requirements.txt', 'rollup.config.js', 'tsconfig.json', '.github/workflows/synoptic-plugin.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,18 +15,18 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --ignore-scripts
-      - run: ln -s ../node_modules synoptic-atlas/node_modules
       - run: node --test test/contours.test.mjs
-      - run: npm --prefix synoptic-atlas run build
+      - run: npm run build
       - name: Verify standalone package identity
         run: |
           node --input-type=module - <<'JS'
           import {readFileSync} from 'node:fs';
-          const config=JSON.parse(readFileSync('synoptic-atlas/dist/plugin.json','utf8'));
+          const config=JSON.parse(readFileSync('dist/plugin.json','utf8'));
           if(config.name!=='windy-plugin-synoptic-atlas'||config.title!=='Synoptic Atlas')throw Error('Wrong plugin configuration');
           console.log('Verified standalone identity:',config.name,config.title,config.version);
           JS
-      - run: pip install 'numpy>=2,<3' 'Pillow>=11,<13'
+      - run: pip install 'numpy>=2,<3'
+      - run: python -m unittest discover -s test -p 'test_synoptic.py'
       - run: python scripts/browser_fixture.py
       - run: npx playwright install --with-deps chromium
       - run: node test/synoptic-browser.mjs
@@ -34,12 +34,12 @@ jobs:
         if: always()
         with:
           name: synoptic-atlas-browser
-          path: synoptic-atlas/test-output/
+          path: test-output/
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: synoptic-atlas-plugin
-          path: synoptic-atlas/dist/
+          path: dist/
   preview:
     needs: check
     if: github.event_name == 'push'

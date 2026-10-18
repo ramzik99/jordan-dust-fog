@@ -1,5 +1,5 @@
-import { MAX_RUN_AGE_MS, decodeFrameResponse } from './forecast.mjs';
-import { worldCopies } from './globalMap.mjs';
+import { MAX_RUN_AGE_MS, decodeFrameResponse } from './contourData.mjs';
+import { worldCopies } from './worldMap.mjs';
 export const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/';
 export const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
 export const CONTOUR_FIELDS = {

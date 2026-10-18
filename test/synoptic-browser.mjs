@@ -12,8 +12,8 @@ window.W={map:{map},store};window.testHost={store,events,listeners};const mod=aw
 if(mod.__pluginConfig.name!=='windy-plugin-synoptic-atlas')throw Error('Wrong plugin identity: '+mod.__pluginConfig.name);
 window.testPlugin=new mod.default({target:document.querySelector('#plugin')});
 </script></body></html>`;
-const server=createServer(async(req,res)=>{try{res.setHeader('Content-Type',req.url==='/plugin.js'?'text/javascript':'text/html');res.end(req.url==='/plugin.js'?await readFile('synoptic-atlas/dist/plugin.js'):html)}catch(error){res.writeHead(500).end(String(error))}});
-await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));await mkdir('synoptic-atlas/test-output',{recursive:true});
+const server=createServer(async(req,res)=>{try{res.setHeader('Content-Type',req.url==='/plugin.js'?'text/javascript':'text/html');res.end(req.url==='/plugin.js'?await readFile('dist/plugin.js'):html)}catch(error){res.writeHead(500).end(String(error))}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));await mkdir('test-output',{recursive:true});
 const browser=await chromium.launch({headless:true});let currentPage,scenarios=0;
 try{
   for(const viewport of [{width:1365,height:1000},{width:390,height:844}]){
@@ -49,12 +49,12 @@ try{
     await page.getByLabel('Enable isolines').uncheck();await active('');await page.getByLabel('Enable isolines').check();await active('gh:700,mslp:0,temp:300');scenarios++;
     await page.getByRole('button',{name:'Clear all',exact:true}).click();await active('');
     await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,mslp:0,temp:850');scenarios++;
-    await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`synoptic-atlas/test-output/standalone-${viewport.width}.png`});
+    await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`test-output/standalone-${viewport.width}.png`});
     await page.getByRole('button',{name:'Minimize panel'}).click();await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).click();scenarios++;
     await page.evaluate(()=>testPlugin.$destroy());assert.equal(await page.locator('[data-synoptic-contours]').count(),0);
     assert.equal(await page.evaluate(()=>testHost.listeners.size+[...testHost.events.values()].reduce((sum,s)=>sum+s.size,0)),0);assert.deepEqual(errors,[]);scenarios++;
     await context.close();
   }
   console.log(`${scenarios} standalone Synoptic Atlas browser scenarios passed; dedicated package identity verified, no dust interface or requests.`);
-}catch(error){if(currentPage&&!currentPage.isClosed()){await currentPage.screenshot({path:'synoptic-atlas/test-output/failure.png'});console.error(await currentPage.locator('body').innerText())}throw error}
+}catch(error){if(currentPage&&!currentPage.isClosed()){await currentPage.screenshot({path:'test-output/failure.png'});console.error(await currentPage.locator('body').innerText())}throw error}
 finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
