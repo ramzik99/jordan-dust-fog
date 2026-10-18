@@ -10,8 +10,8 @@ const __pluginConfig =  {
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792339863866,
-  "builtReadable": "2026-10-18T16:11:03.866Z"
+  "built": 1792340039912,
+  "builtReadable": "2026-10-18T16:13:59.912Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -1093,7 +1093,7 @@ function contourSegments(values, grid, step) {
 }
 const clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
 function drawContours(ctx, map, layers, options, width, height) {
-  ctx.clearRect(0, 0, width, height); const bounds = map.getBounds(), occupied = new Set();
+  ctx.clearRect(0, 0, width, height); const bounds = map.getBounds(), occupied = new Set(), labelGroups = [], boxes = [];
   for (const layer of layers) {
     const config = options[layer.field], visible = [];
     if (!config?.on || config.level !== layer.level) continue;
@@ -1106,13 +1106,19 @@ function drawContours(ctx, map, layers, options, width, height) {
     ctx.lineJoin = 'round'; ctx.setLineDash(layer.field === 'temp' ? [5,3] : []);
     ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.8; ctx.stroke();
     ctx.strokeStyle = config.color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke(); ctx.setLineDash([]);
-    if (options.labels) {
+    labelGroups.push({ layer, config, visible });
+  }
+  if (options.labels) {
+    for (const { layer, config, visible } of labelGroups) {
       ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const [a,b,level] of visible) {
         const x=(a.x+b.x)/2, y=(a.y+b.y)/2;
         if (x<45 || x>width-45 || y<18 || y>height-18) continue;
-        const cell = Math.floor(x/135)+':'+Math.floor(y/65); if (occupied.has(cell)) continue; occupied.add(cell);
+        const cell = layer.field+':'+Math.floor(x/135)+':'+Math.floor(y/65); if (occupied.has(cell)) continue;
         const label = layer.field === 'mslp' ? `${level} hPa` : `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
+        const half=(ctx.measureText?.(label).width || label.length*6)/2;
+        if(boxes.some(b=>Math.abs(b.x-x)<b.half+half+5 && Math.abs(b.y-y)<19)) continue;
+        occupied.add(cell); boxes.push({x,y,half});
         ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=config.color; ctx.fillText(label,x,y);
       }
     }
@@ -1164,7 +1170,7 @@ class ContourOverlay {
           let segments=this.geometry.get(geometryKey);
           if(!segments) { segments=contourSegments(values,m.grid,config.step); this.geometry.set(geometryKey,segments); while(this.geometry.size>3) this.geometry.delete(this.geometry.keys().next().value); }
           if(this.dead || epoch!==this.epoch) return;
-          this.layers.push({field,level:config.level,segments}); this.onRender();
+          this.layers.push({field,level:config.level,segments}); this.layers.sort((a,b)=>Object.keys(CONTOUR_FIELDS).indexOf(a.field)-Object.keys(CONTOUR_FIELDS).indexOf(b.field)); this.onRender();
         } catch(error) { if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(error?.name==='AbortError'?'request timed out':error.message)); }
       }));
       if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:frame.validTime,runTime:m.runTime});
