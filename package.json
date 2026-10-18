@@ -1,14 +1,15 @@
 {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "0.2.0",
-  "description": "Global dust forecast overview using NASA GEOS-FP",
+  "version": "1.0.0",
+  "description": "Worldwide native-grid NASA GEOS-FP dust forecasts and satellite observations",
   "type": "module",
   "main": "dist/plugin.min.js",
   "license": "MIT",
   "scripts": {
     "start": "rollup -w -c",
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs", "test:browser": "python scripts/browser_fixture.py && node test/browser-smoke.mjs"
   },
-  "dependencies": { "@windycom/plugin-devtools": "3.0.3" }
+  "dependencies": { "@windycom/plugin-devtools": "3.0.3" }, "devDependencies": { "playwright": "1.62.1" }
 }
+
