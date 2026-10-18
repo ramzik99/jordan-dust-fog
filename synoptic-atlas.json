@@ -1,15 +1,15 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "icon": "🌐",
   "title": "Synoptic Atlas",
-  "description": "Independent GEOS-FP geopotential height and temperature isolines, with pressure levels and labels.",
+  "description": "Independent geopotential height and temperature isolines, with pressure levels and labels.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": false,
   "listenToSingleclick": false,
-  "built": 1792353786128,
-  "builtReadable": "2026-10-18T20:03:06.128Z"
+  "built": 1792355092751,
+  "builtReadable": "2026-10-18T20:24:52.751Z"
 }

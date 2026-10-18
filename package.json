@@ -1,7 +1,7 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.1.0",
-  "description": "Independent GEOS-FP geopotential height and temperature isolines for Windy",
+  "version": "1.2.0",
+  "description": "Independent geopotential height and temperature isolines for Windy",
   "type": "module",
   "main": "dist/plugin.min.js",
   "license": "MIT",
