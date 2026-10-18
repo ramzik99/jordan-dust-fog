@@ -1,8 +1,8 @@
 import { fieldValue } from './forecast.mjs';
 import { worldCopies } from './globalMap.mjs';
 export const FIELD_INFO = {
-  dustSurface: { label: 'Surface dust', units: '�g/m3', stops: [0, 50, 100, 300, 1000, 3000] },
-  dustFine: { label: 'Fine dust � PM2.5 component', units: '�g/m3', stops: [0, 10, 25, 50, 100, 300] },
+  dustSurface: { label: 'Surface dust', units: 'µg/m³', stops: [0, 50, 100, 300, 1000, 3000] },
+  dustFine: { label: 'Fine dust · PM₂.₅ component', units: 'µg/m³', stops: [0, 10, 25, 50, 100, 300] },
   dustAod: { label: 'Dust optical depth', units: '', stops: [0, .1, .3, .6, 1.5, 3] },
 };
 export const PALETTE = [[245, 242, 224], [253, 224, 163], [249, 168, 37], [227, 108, 35], [182, 66, 49], [93, 36, 55]];

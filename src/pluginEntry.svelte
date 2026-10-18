@@ -13,7 +13,7 @@
     { name: 'Amman', lat: 31.95, lon: 35.93 }, { name: 'Fuheis', lat: 32.01, lon: 35.77 },
     { name: 'London', lat: 51.51, lon: -0.13 }, { name: 'New York', lat: 40.71, lon: -74.01 },
     { name: 'Delhi', lat: 28.61, lon: 77.21 }, { name: 'Sydney', lat: -33.87, lon: 151.21 },
-    { name: 'Cape Town', lat: -33.92, lon: 18.42 }, { name: 'Sao Paulo', lat: -23.55, lon: -46.63 },
+    { name: 'Cape Town', lat: -33.92, lon: 18.42 }, { name: 'São Paulo', lat: -23.55, lon: -46.63 },
   ];
   let forecast: any = null, activeFrame: any = null, texture: HTMLCanvasElement | null = null;
   let enabled = true, showDust = true, hidden = false, view = 'forecast', field = 'dustSurface', opacity = .65;
@@ -70,7 +70,7 @@
     const lat = value?.lat ?? value?.latitude ?? value?.latlng?.lat;
     const rawLon = value?.lon ?? value?.lng ?? value?.longitude ?? value?.latlng?.lng;
     if (typeof lat !== 'number' || typeof rawLon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(rawLon) || Math.abs(lat) > 90) {
-      locationError = 'Enter latitude from -90 to 90 and a finite longitude.'; return;
+      locationError = 'Enter latitude from −90 to 90 and a finite longitude.'; return;
     }
     cancelSeries(); seriesRows = []; seriesDone = 0;
     const lon = wrapLongitude(rawLon); locationError = '';
@@ -163,11 +163,14 @@
   }
   async function refreshSatellite() {
     if (!mounted || !enabled || view !== 'satellite') return;
+    satEpoch++; satAbort?.abort(); satLoading = false;
+    closeSatellite(satFrame); satFrame = null;
     satMetaAbort?.abort(); const abort = new AbortController(); satMetaAbort = abort;
     const epoch = ++satMetaEpoch, source = satSource; satMetaLoading = true; satError = '';
     const timeout = setTimeout(() => abort.abort(), 20000);
     try {
       const metadata = await satelliteMetadata(source, abort.signal);
+      clearTimeout(timeout);
       if (destroyed || epoch !== satMetaEpoch || source !== satSource || view !== 'satellite') return;
       satMeta = metadata; now = Date.now();
       if (followLatest || !satTime) satTime = metadata.latest;
@@ -179,7 +182,7 @@
     } finally { clearTimeout(timeout); if (epoch === satMetaEpoch) satMetaLoading = false; }
   }
   async function requestSatellite() {
-    if (!mounted || !enabled || view !== 'satellite' || !satTime) return;
+    if (!mounted || !enabled || view !== 'satellite' || !satTime || !satMeta) return;
     satAbort?.abort(); const abort = new AbortController(); satAbort = abort;
     const epoch = ++satEpoch, source = satSource, time = satTime; satLoading = true; satError = '';
     if (satFrame && (satFrame.source !== source || satFrame.time !== time)) { closeSatellite(satFrame); satFrame = null; }
@@ -237,10 +240,10 @@
 </script>
 
 {#if hidden}
-  <button class="restore" on:click={() => hidden = false}>?? Dust forecast</button>
+  <button class="restore" on:click={() => hidden = false}>🌫 Dust forecast</button>
 {:else}
   <section class="panel" aria-label="Dust forecast">
-    <header><div><strong>Dust forecast</strong><small>NASA GEOS-FP � v1.0.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>-</button></header>
+    <header><div><strong>Dust forecast</strong><small>NASA GEOS-FP · v1.0.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
     <nav aria-label="Dust view"><button class:active={view === 'forecast'} on:click={() => setView('forecast')}>Forecast</button><button class:active={view === 'satellite'} on:click={() => setView('satellite')}>Satellite</button><label><input aria-label="Enable plugin" type="checkbox" bind:checked={enabled} on:change={toggleEnabled} />On</label></nav>
     <label class="place">Place<select aria-label="Location" value={selected.name} on:change={e => { const p = [...places, ...saved].find(v => v.name === e.currentTarget.value); if (p) { selectPoint(p); map.panTo([Math.max(-85, Math.min(85, p.lat)), p.lon]); } }} disabled={!enabled}>
       {#if ![...places, ...saved].some(p => p.name === selected.name)}<option>{selected.name}</option>{/if}
@@ -250,28 +253,28 @@
     <small>Click the map or enter signed coordinates.</small>
     <div class="coordinates"><label>Lat<input aria-label="Latitude" type="number" min="-90" max="90" step="any" bind:value={inputLat} /></label><label>Lon<input aria-label="Longitude" type="number" step="any" bind:value={inputLon} /></label><button on:click={goToCoordinates} disabled={!enabled}>Go</button></div>
     {#if locationError}<p class="error" role="alert">{locationError}</p>{/if}
-    <div class="point-name"><small>{selected.lat.toFixed(3)}�, {selected.lon.toFixed(3)}�</small><button on:click={savePlace} disabled={!enabled}>{saved.some(p => p.lat === selected.lat && p.lon === selected.lon) ? 'Unsave' : 'Save place'}</button></div>
+    <div class="point-name"><small>{selected.lat.toFixed(3)}°, {selected.lon.toFixed(3)}°</small><button on:click={savePlace} disabled={!enabled}>{saved.some(p => p.lat === selected.lat && p.lon === selected.lon) ? 'Unsave' : 'Save place'}</button></div>
     {#if view === 'forecast'}
-      <div class="field-controls"><select aria-label="Dust field" bind:value={field} on:change={savePreferences}><option value="dustSurface">Surface dust</option><option value="dustFine">Fine dust � PM2.5 component</option><option value="dustAod">Dust optical depth</option></select><label><input aria-label="Show dust map" type="checkbox" bind:checked={showDust} />Map</label></div>
+      <div class="field-controls"><select aria-label="Dust field" bind:value={field} on:change={savePreferences}><option value="dustSurface">Surface dust</option><option value="dustFine">Fine dust · PM₂.₅ component</option><option value="dustAod">Dust optical depth</option></select><label><input aria-label="Show dust map" type="checkbox" bind:checked={showDust} />Map</label></div>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       {#if frameError}<p class="error" role="alert">{frameError}</p>{/if}
-      {#if loading || frameLoading}<p class="loading" role="status">{loading ? 'Reading GEOS forecast.' : 'Loading native GEOS detail.'}</p>{/if}
+      {#if loading || frameLoading}<p class="loading" role="status">{loading ? 'Reading GEOS forecast…' : 'Loading native GEOS detail…'}</p>{/if}
       {#if stale}<p class="error">Forecast expired or model run older than 36 hours. Map hidden.</p>{/if}
-      <div class="reading"><span>{FIELD_INFO[field].label} � forecast</span><strong data-testid="point-value">{format(sample?.[field], field === 'dustAod' ? 2 : 1)}{#if sample?.[field] != null}<small> {FIELD_INFO[field].units}</small>{/if}</strong>
-        {#if desired}<small>{displayTime(desired.start)} - {displayTime(desired.end)} � 3-hour mean</small>{:else}<small>{enabled ? 'No forecast at the selected Windy time' : 'Plugin disabled'}</small>{/if}
+      <div class="reading"><span>{FIELD_INFO[field].label} · forecast</span><strong data-testid="point-value">{format(sample?.[field], field === 'dustAod' ? 2 : 1)}{#if sample?.[field] != null}<small> {FIELD_INFO[field].units}</small>{/if}</strong>
+        {#if desired}<small>{displayTime(desired.start)} – {displayTime(desired.end)} · 3-hour mean</small>{:else}<small>{enabled ? 'No forecast at the selected Windy time' : 'Plugin disabled'}</small>{/if}
       </div>
-      <dl><div><dt>Surface dust</dt><dd>{format(sample?.dustSurface)} �g/m3</dd></div><div><dt>Fine dust component</dt><dd>{format(sample?.dustFine)} �g/m3</dd></div><div><dt>Dust optical depth</dt><dd>{format(sample?.dustAod, 2)}</dd></div></dl>
-      <div class="threshold"><label>Point alert above<input aria-label="Dust threshold" type="number" min="1" step="10" bind:value={threshold} on:change={savePreferences} />�g/m3</label>
-        <p class:met={guidance === 'met'} data-testid="threshold-state">{guidance === 'met' ? 'Above your surface-dust threshold' : guidance === 'below' ? 'Below your surface-dust threshold' : 'Threshold status unavailable'}</p><small>Custom model threshold � not an official warning or health limit.</small>
+      <dl><div><dt>Surface dust</dt><dd>{format(sample?.dustSurface)} µg/m³</dd></div><div><dt>Fine dust component</dt><dd>{format(sample?.dustFine)} µg/m³</dd></div><div><dt>Dust optical depth</dt><dd>{format(sample?.dustAod, 2)}</dd></div></dl>
+      <div class="threshold"><label>Point alert above<input aria-label="Dust threshold" type="number" min="1" step="10" bind:value={threshold} on:change={savePreferences} />µg/m³</label>
+        <p class:met={guidance === 'met'} data-testid="threshold-state">{guidance === 'met' ? 'Above your surface-dust threshold' : guidance === 'below' ? 'Below your surface-dust threshold' : 'Threshold status unavailable'}</p><small>Custom model threshold · not an official warning or health limit.</small>
       </div>
-      {#if showDust}<div class="legend">{#each FIELD_INFO[field].stops as stop, i}<span style={'--color:rgb(' + PALETTE[i].join(',') + ')'}>{stop}{i === 5 ? '+' : ''}</span>{/each}</div><small>{FIELD_INFO[field].units || 'Dimensionless'} � missing cells stay transparent</small>{/if}
+      {#if showDust}<div class="legend">{#each FIELD_INFO[field].stops as stop, i}<span style={'--color:rgb(' + PALETTE[i].join(',') + ')'}>{stop}{i === 5 ? '+' : ''}</span>{/each}</div><small>{FIELD_INFO[field].units || 'Dimensionless'} · missing cells stay transparent</small>{/if}
       <details><summary>Forecast periods</summary><div class="timeline">{#each forecast?.frames || [] as item}<button class:active={desired === item} on:click={() => store.set('timestamp', Date.parse(item.validTime))}>{displayTime(item.validTime)}</button>{/each}</div></details>
       <details><summary>Point forecast</summary>
         {#if seriesLoading}<button on:click={cancelSeries}>Cancel download</button><small>{seriesDone}/{forecast?.frames.length || 0} periods read</small>
         {:else}<button disabled={!forecast || stale || !enabled} on:click={loadSeries}>Load full point forecast</button><small>Downloads native forecast frames; may use tens of MB.</small>{/if}
-        {#if seriesRows.length}<div class="series"><table><thead><tr><th>Period start</th><th>Surface �g/m3</th><th>Fine �g/m3</th><th>AOD</th></tr></thead><tbody>{#each seriesRows as row}<tr><td><button on:click={() => store.set('timestamp', Date.parse(row.validTime))}>{displayTime(row.start)}</button></td><td>{format(row.value?.dustSurface)}</td><td>{format(row.value?.dustFine)}</td><td>{format(row.value?.dustAod, 2)}</td></tr>{/each}</tbody></table></div>{/if}
+        {#if seriesRows.length}<div class="series"><table><thead><tr><th>Period start</th><th>Surface µg/m³</th><th>Fine µg/m³</th><th>AOD</th></tr></thead><tbody>{#each seriesRows as row}<tr><td><button on:click={() => store.set('timestamp', Date.parse(row.validTime))}>{displayTime(row.start)}</button></td><td>{format(row.value?.dustSurface)}</td><td>{format(row.value?.dustFine)}</td><td>{format(row.value?.dustAod, 2)}</td></tr>{/each}</tbody></table></div>{/if}
       </details>
-      <small class="resolution">Native grid: 0.25� latitude x 0.3125� longitude.{#if sample} Nearest node: {sample.lat.toFixed(3)}�, {sample.lon.toFixed(3)}�.{/if}</small>
+      <small class="resolution">Native grid: 0.25° latitude × 0.3125° longitude.{#if sample} Nearest node: {sample.lat.toFixed(3)}°, {sample.lon.toFixed(3)}°.{/if}</small>
     {:else}
       <label class="place">Source<select aria-label="Satellite source" bind:value={satSource} on:change={changeSatellite}><option value="global">Global dust composite</option><option value="meteosat">Meteosat Dust RGB</option></select></label>
       <label class="place">Observed<select aria-label="Observation time" bind:value={satTime} on:change={() => { followLatest = false; void requestSatellite(); }} disabled={!satMeta}>
@@ -280,21 +283,21 @@
       </select></label>
       <button disabled={!satMeta} on:click={() => { followLatest = true; satTime = satMeta.latest; void requestSatellite(); }}>Latest observation</button>
       {#if satError}<p class="error" role="alert">{satError}</p>{/if}
-      {#if satMetaLoading || satLoading}<p class="loading" role="status">Loading satellite observations.</p>{/if}
+      {#if satMetaLoading || satLoading}<p class="loading" role="status">Loading satellite observations…</p>{/if}
       {#if satTime}<p class="observation" data-testid="observation-stamp">Observed {displayTime(satTime)}</p>{/if}
       {#if satDelayed}<p class="error">The latest available imagery is delayed. Check its observation time.</p>{/if}
       <p class="explain">{satSource === 'global' ? 'Three-hour dust RGB composite from several geostationary satellites.' : 'Ten-minute Meteosat Dust RGB for Europe, Africa and the Middle East.'} Satellite coverage varies; blank areas can mean no observation.</p>
-      <p class="explain">Satellite time is independent of Windy's forecast timeline. RGB imagery supports visual dust tracking; it does not measure surface dust concentration.</p>
-      <small>Imagery: <a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer">EUMETSAT EUMETView</a> � <a href="https://user.eumetsat.int/resources/user-guides/dust-clouds" target="_blank" rel="noopener noreferrer">Interpretation guide</a></small>
+      <p class="explain">Satellite time is independent of Windy’s forecast timeline. RGB imagery supports visual dust tracking; it does not measure surface dust concentration.</p>
+      <small>Imagery: <a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer">EUMETSAT EUMETView</a> · <a href="https://user.eumetsat.int/resources/user-guides/dust-clouds" target="_blank" rel="noopener noreferrer">Interpretation guide</a></small>
     {/if}
     <details><summary>Display and interpretation</summary>
       <label class="opacity">Map opacity<input aria-label="Map opacity" type="range" min=".15" max="1" step=".05" bind:value={opacity} on:change={savePreferences} /></label>
       <p>GEOS-FP is a forecast, not a surface observation. Native grid points are retained worldwide; small features between them may be unresolved. Values use compact 16-bit logarithmic packing for delivery, with small quantization differences. Points use the nearest source node.</p>
-      <p>Surface dust is modelled mineral dust, not total PM10. Fine dust is only the dust contribution to PM2.5. Optical depth describes the full atmospheric column and is not a visibility estimate. Threshold guidance applies to the selected point and forecast period only. There are no background notifications.</p>
+      <p>Surface dust is modelled mineral dust, not total PM₁₀. Fine dust is only the dust contribution to PM₂.₅. Optical depth describes the full atmospheric column and is not a visibility estimate. Threshold guidance applies to the selected point and forecast period only. There are no background notifications.</p>
       <p>Use surface observations and official warnings for decisions. Forecast accuracy and alert thresholds have not been independently validated.</p>
     </details>
     <footer><button disabled={!enabled || loading || satMetaLoading || satLoading} on:click={() => view === 'forecast' ? load() : refreshSatellite()}>Refresh</button>
-      {#if forecast}<small>GEOS run {new Date(forecast.runTime).toISOString().slice(0, 16).replace('T', ' ')} UTC<br />Retrieved {displayTime(forecast.retrievedAt)} � display times use your device timezone</small>{/if}
+      {#if forecast}<small>GEOS run {new Date(forecast.runTime).toISOString().slice(0, 16).replace('T', ' ')} UTC<br />Retrieved {displayTime(forecast.retrievedAt)} · display times use your device timezone</small>{/if}
     </footer>
   </section>
 {/if}

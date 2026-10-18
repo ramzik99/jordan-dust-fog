@@ -71,7 +71,9 @@ export class NativeForecast {
   get(manifest, descriptor, signal) {
     if (this.destroyed || signal?.aborted) return Promise.reject(abortError());
     validateDustManifest(manifest);
-    if (!manifest.frames.some(f => f === descriptor || f.validTime === descriptor?.validTime && f.native.massPath === descriptor.native?.massPath)) return Promise.reject(Error('Unknown native period'));
+    const canonical = manifest.frames.find(f => f === descriptor || f.validTime === descriptor?.validTime && f.native.massPath === descriptor.native?.massPath);
+    if (!canonical) return Promise.reject(Error('Unknown native period'));
+    descriptor = canonical;
     const key = this.key(manifest, descriptor);
     if (this.cache.has(key)) {
       const frame = this.cache.get(key); this.cache.delete(key); this.cache.set(key, frame); return Promise.resolve(frame);

@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
@@ -25,13 +25,15 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 await mkdir('test-output', { recursive: true });
-const browser = await chromium.launch({ headless: true });
-let scenarios = 0;
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
+let scenarios = 0, activePage;
 try {
   for (const viewport of [{ width: 1365, height: 1000 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport });
-    const page = await context.newPage(), errors = []; let satFail = false, manifestFail = false;
-    page.on('pageerror', error => errors.push(String(error)));
+    const page = await context.newPage(), errors = []; activePage = page; let satFail = false, manifestFail = false;
+    page.on('pageerror', error => { errors.push(String(error)); console.error('Page error:', String(error)); });
+    page.on('console', msg => { if (msg.type() === 'error') console.error('Browser console:', msg.text()); });
+    page.on('requestfailed', request => console.error('Failed request:', request.url(), request.failure()?.errorText));
     await page.route('https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-dust-data/global/**', async route => {
       const path = new URL(route.request().url()).pathname.split('/global/')[1];
       if (manifestFail && path === 'latest.json') { await route.fulfill({ status: 503, body: 'Unavailable', headers: { 'Access-Control-Allow-Origin': '*' } }); return; }
@@ -102,4 +104,10 @@ try {
     assert.deepEqual(errors, []); scenarios++; await context.close();
   }
   console.log(`${scenarios} desktop/mobile browser scenarios passed (mock Windy host, real compiled plugin and PNG decoder).`);
+} catch (error) {
+  if (activePage && !activePage.isClosed()) {
+    await activePage.screenshot({ path: 'test-output/failure.png' }).catch(() => {});
+    console.error('Browser failure page text:', await activePage.locator('body').innerText());
+  }
+  throw error;
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
