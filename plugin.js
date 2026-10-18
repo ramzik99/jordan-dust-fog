@@ -10,8 +10,8 @@ const __pluginConfig =  {
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792333060485,
-  "builtReadable": "2026-10-18T14:17:40.485Z"
+  "built": 1792333111368,
+  "builtReadable": "2026-10-18T14:18:31.368Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -994,38 +994,38 @@ function add_css(target) {
 
 function get_each_context_3(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[114] = list[i];
+	child_ctx[115] = list[i];
 	return child_ctx;
 }
 
 function get_each_context(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[105] = list[i];
+	child_ctx[106] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[108] = list[i];
+	child_ctx[109] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_2(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[111] = list[i];
-	child_ctx[113] = i;
+	child_ctx[112] = list[i];
+	child_ctx[114] = i;
 	return child_ctx;
 }
 
 function get_each_context_4(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[117] = list[i];
+	child_ctx[118] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_5(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[117] = list[i];
+	child_ctx[118] = list[i];
 	return child_ctx;
 }
 
@@ -1049,7 +1049,6 @@ function create_else_block(ctx) {
 	let show_if = ![.../*places*/ ctx[32], .../*saved*/ ctx[22]].some(/*func*/ ctx[54]);
 	let if_block0_anchor;
 	let each0_anchor;
-	let select_value_value;
 	let select_disabled_value;
 	let t9;
 	let small1;
@@ -1076,7 +1075,7 @@ function create_else_block(ctx) {
 	let t20;
 	let button4;
 
-	let t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[64])
+	let t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[65])
 	? 'Unsave'
 	: 'Save place') + "";
 
@@ -1229,6 +1228,7 @@ function create_else_block(ctx) {
 			attr(select, "aria-label", "Location");
 			select.disabled = select_disabled_value = !/*enabled*/ ctx[1];
 			attr(select, "class", "svelte-17wy0sx");
+			if (/*selected*/ ctx[6].name === void 0) add_render_callback(() => /*select_change_handler*/ ctx[61].call(select));
 			attr(label1, "class", "place svelte-17wy0sx");
 			attr(small1, "class", "svelte-17wy0sx");
 			attr(input1, "aria-label", "Latitude");
@@ -1302,7 +1302,7 @@ function create_else_block(ctx) {
 				}
 			}
 
-			select_option(select, /*selected*/ ctx[6].name);
+			select_option(select, /*selected*/ ctx[6].name, true);
 			append(section, t9);
 			append(section, small1);
 			append(section, t11);
@@ -1358,15 +1358,16 @@ function create_else_block(ctx) {
 					listen(button2, "click", /*click_handler_3*/ ctx[58]),
 					listen(input0, "change", /*input0_change_handler*/ ctx[59]),
 					listen(input0, "change", /*toggleEnabled*/ ctx[46]),
-					listen(select, "change", /*change_handler*/ ctx[61]),
-					listen(input1, "input", /*input1_input_handler*/ ctx[62]),
-					listen(input2, "input", /*input2_input_handler*/ ctx[63]),
+					listen(select, "change", /*select_change_handler*/ ctx[61]),
+					listen(select, "change", /*change_handler*/ ctx[62]),
+					listen(input1, "input", /*input1_input_handler*/ ctx[63]),
+					listen(input2, "input", /*input2_input_handler*/ ctx[64]),
 					listen(button3, "click", /*goToCoordinates*/ ctx[39]),
 					listen(button4, "click", /*savePlace*/ ctx[36]),
-					listen(input3, "change", /*input3_change_input_handler*/ ctx[74]),
-					listen(input3, "input", /*input3_change_input_handler*/ ctx[74]),
+					listen(input3, "change", /*input3_change_input_handler*/ ctx[75]),
+					listen(input3, "input", /*input3_change_input_handler*/ ctx[75]),
 					listen(input3, "change", /*savePreferences*/ ctx[35]),
-					listen(button5, "click", /*click_handler_7*/ ctx[75])
+					listen(button5, "click", /*click_handler_7*/ ctx[76])
 				];
 
 				mounted = true;
@@ -1446,12 +1447,12 @@ function create_else_block(ctx) {
 				each_blocks.length = each_value_4.length;
 			}
 
-			if (dirty[0] & /*selected, saved*/ 4194368 | dirty[1] & /*places*/ 2 && select_value_value !== (select_value_value = /*selected*/ ctx[6].name)) {
-				select_option(select, /*selected*/ ctx[6].name);
-			}
-
 			if (dirty[0] & /*enabled*/ 2 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[1])) {
 				select.disabled = select_disabled_value;
+			}
+
+			if (dirty[0] & /*selected, saved*/ 4194368 | dirty[1] & /*places*/ 2) {
+				select_option(select, /*selected*/ ctx[6].name);
 			}
 
 			if (dirty[0] & /*inputLat*/ 1048576 && to_number(input1.value) !== /*inputLat*/ ctx[20]) {
@@ -1482,7 +1483,7 @@ function create_else_block(ctx) {
 			if (dirty[0] & /*selected*/ 64 && t17_value !== (t17_value = /*selected*/ ctx[6].lat.toFixed(3) + "")) set_data(t17, t17_value);
 			if (dirty[0] & /*selected*/ 64 && t19_value !== (t19_value = /*selected*/ ctx[6].lon.toFixed(3) + "")) set_data(t19, t19_value);
 
-			if (dirty[0] & /*saved, selected*/ 4194368 && t21_value !== (t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[64])
+			if (dirty[0] & /*saved, selected*/ 4194368 && t21_value !== (t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[65])
 			? 'Unsave'
 			: 'Save place') + "")) set_data(t21, t21_value);
 
@@ -1609,14 +1610,14 @@ function create_if_block_19(ctx) {
 // (456:6) {#each places as p}
 function create_each_block_5(ctx) {
 	let option;
-	let t_value = /*p*/ ctx[117].name + "";
+	let t_value = /*p*/ ctx[118].name + "";
 	let t;
 
 	return {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = /*p*/ ctx[117].name;
+			option.__value = /*p*/ ctx[118].name;
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1635,7 +1636,7 @@ function create_each_block_5(ctx) {
 // (457:6) {#each saved.filter(p => !places.some(v => v.name === p.name)) as p}
 function create_each_block_4(ctx) {
 	let option;
-	let t_value = /*p*/ ctx[117].name + "";
+	let t_value = /*p*/ ctx[118].name + "";
 	let t;
 	let option_value_value;
 
@@ -1643,7 +1644,7 @@ function create_each_block_4(ctx) {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = option_value_value = /*p*/ ctx[117].name;
+			option.__value = option_value_value = /*p*/ ctx[118].name;
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1651,9 +1652,9 @@ function create_each_block_4(ctx) {
 			append(option, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*saved*/ 4194304 && t_value !== (t_value = /*p*/ ctx[117].name + "")) set_data(t, t_value);
+			if (dirty[0] & /*saved*/ 4194304 && t_value !== (t_value = /*p*/ ctx[118].name + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*saved*/ 4194304 && option_value_value !== (option_value_value = /*p*/ ctx[117].name)) {
+			if (dirty[0] & /*saved*/ 4194304 && option_value_value !== (option_value_value = /*p*/ ctx[118].name)) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -1790,12 +1791,12 @@ function create_else_block_3(ctx) {
 			set_input_value(option1, option1.__value);
 			attr(select0, "aria-label", "Satellite source");
 			attr(select0, "class", "svelte-17wy0sx");
-			if (/*satSource*/ ctx[8] === void 0) add_render_callback(() => /*select0_change_handler*/ ctx[70].call(select0));
+			if (/*satSource*/ ctx[8] === void 0) add_render_callback(() => /*select0_change_handler*/ ctx[71].call(select0));
 			attr(label0, "class", "place svelte-17wy0sx");
 			attr(select1, "aria-label", "Observation time");
 			select1.disabled = select1_disabled_value = !/*satMeta*/ ctx[10];
 			attr(select1, "class", "svelte-17wy0sx");
-			if (/*satTime*/ ctx[9] === void 0) add_render_callback(() => /*select1_change_handler*/ ctx[71].call(select1));
+			if (/*satTime*/ ctx[9] === void 0) add_render_callback(() => /*select1_change_handler*/ ctx[72].call(select1));
 			attr(label1, "class", "place svelte-17wy0sx");
 			button.disabled = button_disabled_value = !/*satMeta*/ ctx[10];
 			attr(button, "class", "svelte-17wy0sx");
@@ -1846,11 +1847,11 @@ function create_else_block_3(ctx) {
 
 			if (!mounted) {
 				dispose = [
-					listen(select0, "change", /*select0_change_handler*/ ctx[70]),
+					listen(select0, "change", /*select0_change_handler*/ ctx[71]),
 					listen(select0, "change", /*changeSatellite*/ ctx[44]),
-					listen(select1, "change", /*select1_change_handler*/ ctx[71]),
-					listen(select1, "change", /*change_handler_1*/ ctx[72]),
-					listen(button, "click", /*click_handler_6*/ ctx[73])
+					listen(select1, "change", /*select1_change_handler*/ ctx[72]),
+					listen(select1, "change", /*change_handler_1*/ ctx[73]),
+					listen(button, "click", /*click_handler_6*/ ctx[74])
 				];
 
 				mounted = true;
@@ -2193,7 +2194,7 @@ function create_if_block_2(ctx) {
 			set_input_value(option2, option2.__value);
 			attr(select, "aria-label", "Dust field");
 			attr(select, "class", "svelte-17wy0sx");
-			if (/*field*/ ctx[4] === void 0) add_render_callback(() => /*select_change_handler*/ ctx[65].call(select));
+			if (/*field*/ ctx[4] === void 0) add_render_callback(() => /*select_change_handler_1*/ ctx[66].call(select));
 			attr(input0, "aria-label", "Show dust map");
 			attr(input0, "type", "checkbox");
 			attr(input0, "class", "svelte-17wy0sx");
@@ -2314,10 +2315,10 @@ function create_if_block_2(ctx) {
 
 			if (!mounted) {
 				dispose = [
-					listen(select, "change", /*select_change_handler*/ ctx[65]),
+					listen(select, "change", /*select_change_handler_1*/ ctx[66]),
 					listen(select, "change", /*savePreferences*/ ctx[35]),
-					listen(input0, "change", /*input0_change_handler_1*/ ctx[66]),
-					listen(input1, "input", /*input1_input_handler_1*/ ctx[67]),
+					listen(input0, "change", /*input0_change_handler_1*/ ctx[67]),
+					listen(input1, "input", /*input1_input_handler_1*/ ctx[68]),
 					listen(input1, "change", /*savePreferences*/ ctx[35])
 				];
 
@@ -2578,7 +2579,7 @@ function create_if_block_17(ctx) {
 // (488:8) {#each satMeta?.times || [] as time}
 function create_each_block_3(ctx) {
 	let option;
-	let t_value = /*displayTime*/ ctx[33](/*time*/ ctx[114]) + "";
+	let t_value = /*displayTime*/ ctx[33](/*time*/ ctx[115]) + "";
 	let t;
 	let option_value_value;
 
@@ -2586,7 +2587,7 @@ function create_each_block_3(ctx) {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = option_value_value = /*time*/ ctx[114];
+			option.__value = option_value_value = /*time*/ ctx[115];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -2594,9 +2595,9 @@ function create_each_block_3(ctx) {
 			append(option, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satMeta*/ 1024 && t_value !== (t_value = /*displayTime*/ ctx[33](/*time*/ ctx[114]) + "")) set_data(t, t_value);
+			if (dirty[0] & /*satMeta*/ 1024 && t_value !== (t_value = /*displayTime*/ ctx[33](/*time*/ ctx[115]) + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*satMeta*/ 1024 && option_value_value !== (option_value_value = /*time*/ ctx[114])) {
+			if (dirty[0] & /*satMeta*/ 1024 && option_value_value !== (option_value_value = /*time*/ ctx[115])) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -2998,9 +2999,9 @@ function create_if_block_6(ctx) {
 // (476:40) {#each FIELD_INFO[field].stops as stop, i}
 function create_each_block_2(ctx) {
 	let span;
-	let t0_value = /*stop*/ ctx[111] + "";
+	let t0_value = /*stop*/ ctx[112] + "";
 	let t0;
-	let t1_value = (/*i*/ ctx[113] === 5 ? '+' : '') + "";
+	let t1_value = (/*i*/ ctx[114] === 5 ? '+' : '') + "";
 	let t1;
 
 	return {
@@ -3008,7 +3009,7 @@ function create_each_block_2(ctx) {
 			span = element("span");
 			t0 = text(t0_value);
 			t1 = text(t1_value);
-			attr(span, "style", '--color:rgb(' + PALETTE[/*i*/ ctx[113]].join(',') + ')');
+			attr(span, "style", '--color:rgb(' + PALETTE[/*i*/ ctx[114]].join(',') + ')');
 			attr(span, "class", "svelte-17wy0sx");
 		},
 		m(target, anchor) {
@@ -3017,7 +3018,7 @@ function create_each_block_2(ctx) {
 			append(span, t1);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*field*/ 16 && t0_value !== (t0_value = /*stop*/ ctx[111] + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*field*/ 16 && t0_value !== (t0_value = /*stop*/ ctx[112] + "")) set_data(t0, t0_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -3030,13 +3031,13 @@ function create_each_block_2(ctx) {
 // (477:72) {#each forecast?.frames || [] as item}
 function create_each_block_1(ctx) {
 	let button;
-	let t_value = /*displayTime*/ ctx[33](/*item*/ ctx[108].validTime) + "";
+	let t_value = /*displayTime*/ ctx[33](/*item*/ ctx[109].validTime) + "";
 	let t;
 	let mounted;
 	let dispose;
 
 	function click_handler_4() {
-		return /*click_handler_4*/ ctx[68](/*item*/ ctx[108]);
+		return /*click_handler_4*/ ctx[69](/*item*/ ctx[109]);
 	}
 
 	return {
@@ -3044,7 +3045,7 @@ function create_each_block_1(ctx) {
 			button = element("button");
 			t = text(t_value);
 			attr(button, "class", "svelte-17wy0sx");
-			toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[108]);
+			toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[109]);
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
@@ -3057,10 +3058,10 @@ function create_each_block_1(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (dirty[0] & /*forecast*/ 1 && t_value !== (t_value = /*displayTime*/ ctx[33](/*item*/ ctx[108].validTime) + "")) set_data(t, t_value);
+			if (dirty[0] & /*forecast*/ 1 && t_value !== (t_value = /*displayTime*/ ctx[33](/*item*/ ctx[109].validTime) + "")) set_data(t, t_value);
 
 			if (dirty[0] & /*desired, forecast*/ 4097) {
-				toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[108]);
+				toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[109]);
 			}
 		},
 		d(detaching) {
@@ -3252,22 +3253,22 @@ function create_each_block(ctx) {
 	let tr;
 	let td0;
 	let button;
-	let t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[105].start) + "";
+	let t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[106].start) + "";
 	let t0;
 	let td1;
-	let t1_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustSurface) + "";
+	let t1_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustSurface) + "";
 	let t1;
 	let td2;
-	let t2_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustFine) + "";
+	let t2_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustFine) + "";
 	let t2;
 	let td3;
-	let t3_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustAod, 2) + "";
+	let t3_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustAod, 2) + "";
 	let t3;
 	let mounted;
 	let dispose;
 
 	function click_handler_5() {
-		return /*click_handler_5*/ ctx[69](/*row*/ ctx[105]);
+		return /*click_handler_5*/ ctx[70](/*row*/ ctx[106]);
 	}
 
 	return {
@@ -3307,10 +3308,10 @@ function create_each_block(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (dirty[0] & /*seriesRows*/ 8388608 && t0_value !== (t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[105].start) + "")) set_data(t0, t0_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t1_value !== (t1_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustSurface) + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t2_value !== (t2_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustFine) + "")) set_data(t2, t2_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t3_value !== (t3_value = /*format*/ ctx[34](/*row*/ ctx[105].value?.dustAod, 2) + "")) set_data(t3, t3_value);
+			if (dirty[0] & /*seriesRows*/ 8388608 && t0_value !== (t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[106].start) + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*seriesRows*/ 8388608 && t1_value !== (t1_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustSurface) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*seriesRows*/ 8388608 && t2_value !== (t2_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustFine) + "")) set_data(t2, t2_value);
+			if (dirty[0] & /*seriesRows*/ 8388608 && t3_value !== (t3_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustAod, 2) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -4089,6 +4090,13 @@ function instance($$self, $$props, $$invalidate) {
 
 	const func_1 = p => !places.some(v => v.name === p.name);
 
+	function select_change_handler() {
+		selected.name = select_value(this);
+		$$invalidate(6, selected);
+		$$invalidate(22, saved);
+		$$invalidate(32, places);
+	}
+
 	const change_handler = e => {
 		const p = [...places, ...saved].find(v => v.name === e.currentTarget.value);
 
@@ -4110,7 +4118,7 @@ function instance($$self, $$props, $$invalidate) {
 
 	const func_2 = p => p.lat === selected.lat && p.lon === selected.lon;
 
-	function select_change_handler() {
+	function select_change_handler_1() {
 		field = select_value(this);
 		$$invalidate(4, field);
 	}
@@ -4255,11 +4263,12 @@ function instance($$self, $$props, $$invalidate) {
 		click_handler_3,
 		input0_change_handler,
 		func_1,
+		select_change_handler,
 		change_handler,
 		input1_input_handler,
 		input2_input_handler,
 		func_2,
-		select_change_handler,
+		select_change_handler_1,
 		input0_change_handler_1,
 		input1_input_handler_1,
 		click_handler_4,
