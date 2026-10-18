@@ -10,8 +10,8 @@ const __pluginConfig =  {
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792353149247,
-  "builtReadable": "2026-10-18T19:52:29.247Z"
+  "built": 1792353269454,
+  "builtReadable": "2026-10-18T19:54:29.454Z"
 };
 
 // transformCode: import { map } from '@windy/map';
