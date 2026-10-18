@@ -5,7 +5,7 @@ import { defaultContours, safeContourOptions, validateContourManifest, contourSn
 function fixture() {
   const now=Date.now(), start=Math.floor(now/10800000)*10800000, run=Math.floor(now/21600000)*21600000;
   const iso=t=>new Date(t).toISOString().replace('.000Z','Z');
-  return {schemaVersion:1,source:'NASA GEOS-FP',collection:'inst3_3d_asm_Np',runTime:iso(run),retrievedAt:iso(Math.floor(now/1000)*1000),
+  return {schemaVersion:1,source:'NOAA GFS',collection:'gfs_1p00',runTime:iso(run),retrievedAt:iso(Math.floor(now/1000)*1000),
     grid:{width:288,height:145,longitudeStart:-180,latitudeStart:-90,step:1.25},levels:[925,850,700,500,300],units:{gh:'dam',temp:'degC'},frames:[{validTime:iso(start)},{validTime:iso(start+10800000)}]};
 }
 test('contour manifest rejects wrong units, grids, stale runs and irregular snapshots',()=>{
@@ -66,4 +66,13 @@ test('reference colors follow values and clamp beyond the legend endpoints',()=>
   assert.equal(contourColor('temp',-80),contourColor('temp',-40));
   assert.throws(()=>contourColor('mslp',1012));
   assert.equal(safeContourOptions({mslp:{on:true}}).mslp,undefined);
+});
+
+test('long-range snapshots cover 360 hours without extrapolating beyond hour 384',()=>{
+  const m=fixture(),run=Date.parse(m.runTime),iso=t=>new Date(t).toISOString().replace('.000Z','Z');
+  m.frames=Array.from({length:129},(_,i)=>({validTime:iso(run+i*10800000)}));
+  assert.ok(validateContourManifest(m));
+  assert.equal(contourSnapshot(m,run+360*3600000).validTime,iso(run+360*3600000));
+  assert.equal(contourSnapshot(m,run+386*3600000),null);
+  m.frames.push({validTime:iso(run+387*3600000)});assert.throws(()=>validateContourManifest(m));
 });

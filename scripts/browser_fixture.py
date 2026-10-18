@@ -14,14 +14,16 @@ token = run.strftime('%Y%m%d_%H')
 synoptic = root / 'contours'
 syn_frames = []
 lat, lon = np.meshgrid(np.linspace(-90, 90, 145), -180 + np.arange(288) * 1.25, indexing='ij')
-for i in range(2):
-    valid = start + timedelta(hours=i * 3)
+for i in range(129):
+    valid = run + timedelta(hours=i * 3)
+    syn_frames.append({'validTime': iso(valid)})
+    if valid not in (start, start + timedelta(hours=3)) and i < 120:
+        continue
     for level, height, temperature in [(925, 75, 15), (850, 150, 10), (700, 300, 0), (500, 560, -15), (300, 920, -40)]:
-        gh = height + 40 * np.sin(np.deg2rad(lat * 2)) + 20 * np.cos(np.deg2rad(lon)) + i * 4
-        temp = temperature - 40 * np.abs(lat) / 90 + 10 * np.sin(np.deg2rad(lon)) + i
+        gh = height + 40 * np.sin(np.deg2rad(lat * 2)) + 20 * np.cos(np.deg2rad(lon)) + (i % 2) * 4
+        temp = temperature - 40 * np.abs(lat) / 90 + 10 * np.sin(np.deg2rad(lon)) + (i % 2)
         write_field(synoptic, token, valid, 'gh', level, gh, run)
         write_field(synoptic, token, valid, 'temp', level, temp, run)
-    syn_frames.append({'validTime': iso(valid)})
-syn_manifest = {'schemaVersion': 1, 'source': 'NASA GEOS-FP', 'collection': 'inst3_3d_asm_Np',
+syn_manifest = {'schemaVersion': 1, 'source': 'NOAA GFS', 'collection': 'gfs_1p00',
                 'runTime': iso(run), 'retrievedAt': iso(now), 'grid': GRID, 'levels': LEVELS, 'units': UNITS, 'frames': syn_frames}
 (synoptic / 'latest.json').write_text(json.dumps(syn_manifest), encoding='utf-8')

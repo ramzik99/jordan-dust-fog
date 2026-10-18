@@ -1,7 +1,7 @@
 import { contourColor } from './contourPalettes.mjs';
 import { MAX_RUN_AGE_MS, decodeFrameResponse } from './contourData.mjs';
 import { worldCopies } from './worldMap.mjs';
-export const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/';
+export const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/synoptic-data/contours/';
 export const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
 export const CONTOUR_FIELDS = {
   gh: { label: 'Geopotential height', units: 'dam', steps: [3, 6, 12], bounds: [-100, 6000] },
@@ -24,16 +24,16 @@ export function safeContourOptions(raw) {
 }
 const validDate = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value) && Number.isFinite(Date.parse(value));
 export function validateContourManifest(m, now = Date.now()) {
-  if (m?.schemaVersion !== 1 || m.source !== 'NASA GEOS-FP' || m.collection !== 'inst3_3d_asm_Np') throw Error('Unsupported contour data');
+  if (m?.schemaVersion !== 1 || m.source !== 'NOAA GFS' || m.collection !== 'gfs_1p00') throw Error('Unsupported contour data');
   if (!validDate(m.runTime) || !validDate(m.retrievedAt) || Date.parse(m.runTime) > now + 3600000 || now - Date.parse(m.runTime) > MAX_RUN_AGE_MS || Date.parse(m.retrievedAt) < Date.parse(m.runTime) || Date.parse(m.retrievedAt) > now + 3600000) throw Error('Contour run is stale or invalid');
   const g = m.grid;
   if (!g || g.width !== 288 || g.height !== 145 || g.longitudeStart !== -180 || g.latitudeStart !== -90 || g.step !== 1.25 || JSON.stringify(m.levels) !== JSON.stringify(PRESSURE_LEVELS)) throw Error('Unexpected contour grid or pressure levels');
   if (Object.keys(CONTOUR_FIELDS).some(k => m.units?.[k] !== CONTOUR_FIELDS[k].units)) throw Error('Unexpected contour units');
-  if (!Array.isArray(m.frames) || m.frames.length < 2 || m.frames.length > 42) throw Error('Invalid contour snapshots');
+  if (!Array.isArray(m.frames) || m.frames.length < 2 || m.frames.length > 129) throw Error('Invalid contour snapshots');
   let previous = -Infinity;
   for (const f of m.frames) {
     const t = Date.parse(f.validTime);
-    if (!validDate(f.validTime) || t < Date.parse(m.runTime) || t > Date.parse(m.runTime) + 120 * 3600000 || t <= previous || previous !== -Infinity && t - previous !== 10800000) throw Error('Invalid contour snapshot time');
+    if (!validDate(f.validTime) || t < Date.parse(m.runTime) || t > Date.parse(m.runTime) + 384 * 3600000 || t <= previous || previous !== -Infinity && t - previous !== 10800000) throw Error('Invalid contour snapshot time');
     previous = t;
   }
   if (previous + 5400000 < now) throw Error('Contour forecast expired');
