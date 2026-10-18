@@ -16,12 +16,12 @@ def iso(value):
 
 COLLECTION = 'inst3_3d_asm_Np'
 LEVELS = [925, 850, 700, 500, 300]
-UNITS = {'gh': 'dam', 'temp': 'degC', 'mslp': 'hPa'}
+UNITS = {'gh': 'dam', 'temp': 'degC'}
 GRID = {'width': 288, 'height': 145, 'longitudeStart': -180, 'latitudeStart': -90, 'step': 1.25}
 
 def convert_field(values, field, surface_pressure=None, level=None):
     raw = np.asarray(values, dtype=float)
-    bounds = {'gh': (-1000, 60000), 'temp': (100, 400), 'mslp': (80000, 110000)}
+    bounds = {'gh': (-1000, 60000), 'temp': (100, 400)}
     lo, hi = bounds[field]
     valid = np.isfinite(raw) & (raw >= lo) & (raw <= hi)
     if surface_pressure is not None and level is not None:
@@ -54,11 +54,11 @@ def retrieve(token, run, now, root):
         raise ValueError('Refusing to regress contour run')
     with xr.open_dataset(url, engine='netcdf4', decode_times=False) as source:
         for key, dims in [('h', ('time', 'lev', 'lat', 'lon')), ('t', ('time', 'lev', 'lat', 'lon')),
-                          ('slp', ('time', 'lat', 'lon')), ('ps', ('time', 'lat', 'lon'))]:
+                          ('ps', ('time', 'lat', 'lon'))]:
             if key not in source or source[key].dims != dims:
                 raise ValueError(f'Unexpected source dimensions for {key}')
             units = str(source[key].attrs.get('units', '')).strip().lower()
-            accepted = {'h': ('m', 'meter', 'metres'), 't': ('k', 'kelvin'), 'slp': ('pa',), 'ps': ('pa',)}
+            accepted = {'h': ('m', 'meter', 'metres'), 't': ('k', 'kelvin'), 'ps': ('pa',)}
             if units and units not in accepted[key]:
                 raise ValueError(f'Unexpected source units for {key}: {units}')
         ys, xs = np.asarray(source.lat.values), np.asarray(source.lon.values)
@@ -79,12 +79,6 @@ def retrieve(token, run, now, root):
         selection = dict(time=slice(indices[0], indices[-1] + 1), lat=slice(None, None, 5), lon=slice(None, None, 4))
         print(f'Downloading {len(indices)} instantaneous snapshots for {token}', flush=True)
         ps = source.ps.isel(**selection).values
-        slp = source.slp.isel(**selection).values
-        for i, original in enumerate(indices):
-            values = convert_field(slp[i], 'mslp')
-            if np.isfinite(values).sum() < values.size * .5:
-                raise ValueError('Incomplete mean sea-level pressure field')
-            write_field(root, token, times[original], 'mslp', 0, values, run)
         for field, name in [('gh', 'h'), ('temp', 't')]:
             for level in LEVELS:
                 raw = source[name].isel(lev=levels.index(level), **selection).values
@@ -96,7 +90,7 @@ def retrieve(token, run, now, root):
                 print(f'Encoded {field} at {level} hPa', flush=True)
         product = {'schemaVersion': 1, 'source': 'NASA GEOS-FP', 'collection': COLLECTION, 'datasetUrl': url,
                    'runTime': iso(run), 'retrievedAt': iso(now), 'grid': GRID, 'levels': LEVELS, 'units': UNITS,
-                   'temporalSampling': '3-hourly instantaneous snapshots; not dust averaging intervals',
+                   'temporalSampling': '3-hourly instantaneous snapshots',
                    'spatialSampling': '1.25-degree native-node sampling for synoptic contours',
                    'unitBasis': 'GEOS-FP file specification; checked against source units when supplied',
                    'frames': [{'validTime': iso(times[i])} for i in indices]}

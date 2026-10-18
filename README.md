@@ -2,7 +2,7 @@
 
 Package ID: `windy-plugin-synoptic-atlas`. This is an independent contour-only plugin with its own UI, preferences and development preview. It uses NASA GEOS-FP meteorology for worldwide contour overlays.
 
-Tick geopotential height, temperature and MSLP independently, or choose **Synoptic preset** for 500 hPa height + 850 hPa temperature + MSLP. Upper-air levels: 925, 850, 700, 500 and 300 hPa. Each field has its own spacing and colour; labels can be toggled.
+Tick geopotential height and temperature independently, or choose **Synoptic preset** for 500 hPa height + 850 hPa temperature. Upper-air levels: 925, 850, 700, 500 and 300 hPa. Each field has its own spacing. Lines and labels use the supplied value-based color palettes, with expandable legends.
 
 In Windy developer mode load:
 
@@ -10,7 +10,7 @@ https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@synoptic-preview/synoptic-a
 
 The dedicated preview updates after its own build and browser tests pass. For a fixed version replace `synoptic-preview` with the preview branch's commit SHA. It remains unpublished to the Windy directory.
 
-GEOS instantaneous fields are sampled to 1.25 degrees for contouring. The exact snapshot and model run are shown. No snapshot is used beyond 90 minutes from the requested Windy forecast time. Heights use dam, temperature Celsius and MSLP hPa. Below-terrain values and missing data are masked. Contours do not change Windy's background model or native isolines.
+GEOS instantaneous fields are sampled to 1.25 degrees for contouring. The exact snapshot and model run are shown. No snapshot is used beyond 90 minutes from the requested Windy forecast time. Heights use dam, temperature Celsius. Below-terrain values and missing data are masked. Contours do not change Windy's background model or native isolines.
 
 Install dependencies with `npm install`, then run `npm run build`. The contour engine is `src/contours.mjs`; the UI and configuration are in `src/`.
 

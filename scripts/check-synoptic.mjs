@@ -8,7 +8,7 @@ async function get(path) {
 const manifest=validateContourManifest(await (await get('latest.json')).json());
 const frame=contourSnapshot(manifest,Date.now());
 if(!frame) throw Error('No current contour snapshot');
-for(const field of Object.keys(CONTOUR_FIELDS)) for(const level of field==='mslp'?[0]:PRESSURE_LEVELS) {
+for(const field of Object.keys(CONTOUR_FIELDS)) for(const level of PRESSURE_LEVELS) {
   const response=await get(contourPath(manifest,frame,field,level));
   const values=validateContourField(await decodeFrameResponse(response),manifest,frame,field,level);
   let min=Infinity,max=-Infinity,count=0;
@@ -16,4 +16,4 @@ for(const field of Object.keys(CONTOUR_FIELDS)) for(const level of field==='mslp
   if(count<values.length*.25) throw Error('Insufficient valid data: '+field+' '+level);
   console.log(field,level,CONTOUR_FIELDS[field].units,'range',min,max,'valid nodes',count);
 }
-console.log('Live contours verified:',manifest.runTime,'snapshot',frame.validTime,'CORS and all 11 fields/levels');
+console.log('Live contours verified:',manifest.runTime,'snapshot',frame.validTime,'CORS and all 10 fields/levels');

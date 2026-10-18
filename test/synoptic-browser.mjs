@@ -28,27 +28,34 @@ try{
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.getByRole('region',{name:'Synoptic Atlas',exact:true}).waitFor();
-    assert.doesNotMatch(await page.locator('body').innerText(),/dust|satellite/i);
+    assert.doesNotMatch(await page.locator('body').innerText(),/dust|satellite|mslp|mean sea level/i);
     assert.equal(await page.locator('[data-geos-dust]').count(),0);scenarios++;
     const active=expected=>page.waitForFunction(expected=>document.querySelector('[data-synoptic-contours]')?.dataset.layers===expected,expected);
-    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,mslp:0,temp:850');scenarios++;
-    for(const [field,remaining] of [['Geopotential height','mslp:0,temp:850'],['Temperature','gh:500,mslp:0'],['MSLP','gh:500,temp:850']]){
+    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,temp:850');scenarios++;
+    for(const [field,remaining] of [['Geopotential height','temp:850'],['Temperature','gh:500']]){
       await page.getByLabel(field+' isolines',{exact:true}).uncheck();await active(remaining);
-      await page.getByLabel(field+' isolines',{exact:true}).check();await active('gh:500,mslp:0,temp:850');scenarios++;
+      await page.getByLabel(field+' isolines',{exact:true}).check();await active('gh:500,temp:850');scenarios++;
     }
-    await page.getByLabel('Geopotential height pressure level').selectOption('700');await active('gh:700,mslp:0,temp:850');
-    await page.getByLabel('Temperature pressure level').selectOption('500');await active('gh:700,mslp:0,temp:500');scenarios++;
+    await page.getByLabel('Geopotential height pressure level').selectOption('700');await active('gh:700,temp:850');
+    await page.getByLabel('Temperature pressure level').selectOption('500');await active('gh:700,temp:500');scenarios++;
+    await page.getByText('Temperature colors (°C)',{exact:true}).click();
+    await page.getByLabel('Temperature color legend').waitFor();
+    assert.equal(await page.getByLabel('Temperature color legend').locator('.swatch').count(),41);
+    await page.getByText('Temperature colors (°C)',{exact:true}).click();
+    await page.getByText('Geopotential height colors (dam)',{exact:true}).click();
+    assert.equal(await page.getByLabel('Geopotential height color legend').locator('.swatch').count(),66);
+    await page.getByText('Geopotential height colors (dam)',{exact:true}).click();scenarios++;
     await page.getByLabel('Geopotential height contour spacing').selectOption('12');
-    await page.getByLabel('Contour labels',{exact:true}).uncheck();await page.getByLabel('Contour labels',{exact:true}).check();await active('gh:700,mslp:0,temp:500');scenarios++;
+    await page.getByLabel('Contour labels',{exact:true}).uncheck();await page.getByLabel('Contour labels',{exact:true}).check();await active('gh:700,temp:500');scenarios++;
     fail='temp';await page.getByLabel('Temperature pressure level').selectOption('300');
-    await page.getByRole('alert').filter({hasText:'Temperature: HTTP 503'}).waitFor();await active('gh:700,mslp:0');
-    fail='';await page.getByRole('button',{name:'Refresh',exact:true}).click();await active('gh:700,mslp:0,temp:300');scenarios++;
+    await page.getByRole('alert').filter({hasText:'Temperature: HTTP 503'}).waitFor();await active('gh:700');
+    fail='';await page.getByRole('button',{name:'Refresh',exact:true}).click();await active('gh:700,temp:300');scenarios++;
     await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames[1].validTime)+10800000);
     await page.getByRole('alert').filter({hasText:'No contour snapshot within 90 minutes'}).waitFor();await active('');
-    await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames[0].validTime));await active('gh:700,mslp:0,temp:300');scenarios++;
-    await page.getByLabel('Enable isolines').uncheck();await active('');await page.getByLabel('Enable isolines').check();await active('gh:700,mslp:0,temp:300');scenarios++;
+    await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames[0].validTime));await active('gh:700,temp:300');scenarios++;
+    await page.getByLabel('Enable isolines').uncheck();await active('');await page.getByLabel('Enable isolines').check();await active('gh:700,temp:300');scenarios++;
     await page.getByRole('button',{name:'Clear all',exact:true}).click();await active('');
-    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,mslp:0,temp:850');scenarios++;
+    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,temp:850');scenarios++;
     await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`test-output/standalone-${viewport.width}.png`});
     await page.getByRole('button',{name:'Minimize panel'}).click();await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).click();scenarios++;
     await page.evaluate(()=>testPlugin.$destroy());assert.equal(await page.locator('[data-synoptic-contours]').count(),0);

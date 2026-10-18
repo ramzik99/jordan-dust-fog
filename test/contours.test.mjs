@@ -1,3 +1,4 @@
+import { contourColor } from '../src/contourPalettes.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultContours, safeContourOptions, validateContourManifest, contourSnapshot, contourPath, validateContourField, contourSegments, drawContours } from '../src/contours.mjs';
@@ -5,7 +6,7 @@ function fixture() {
   const now=Date.now(), start=Math.floor(now/10800000)*10800000, run=Math.floor(now/21600000)*21600000;
   const iso=t=>new Date(t).toISOString().replace('.000Z','Z');
   return {schemaVersion:1,source:'NASA GEOS-FP',collection:'inst3_3d_asm_Np',runTime:iso(run),retrievedAt:iso(Math.floor(now/1000)*1000),
-    grid:{width:288,height:145,longitudeStart:-180,latitudeStart:-90,step:1.25},levels:[925,850,700,500,300],units:{gh:'dam',temp:'degC',mslp:'hPa'},frames:[{validTime:iso(start)},{validTime:iso(start+10800000)}]};
+    grid:{width:288,height:145,longitudeStart:-180,latitudeStart:-90,step:1.25},levels:[925,850,700,500,300],units:{gh:'dam',temp:'degC'},frames:[{validTime:iso(start)},{validTime:iso(start+10800000)}]};
 }
 test('contour manifest rejects wrong units, grids, stale runs and irregular snapshots',()=>{
   assert.ok(validateContourManifest(fixture()));
@@ -41,16 +42,28 @@ test('saddle cells produce finite local segments instead of crossing the globe',
   assert.ok(segments.length);assert.ok(segments.every(s=>s.every(Number.isFinite)&&Math.abs(s[0]-s[2])<=1&&Math.abs(s[1]-s[3])<=1));
 });
 test('checkbox settings remain independent and invalid saved settings are ignored',()=>{
-  const p=defaultContours();p.gh.on=true;p.temp.on=true;p.mslp.on=true;p.temp.level=700;
+  const p=defaultContours();p.gh.on=true;p.temp.on=true;p.temp.level=700;
   assert.deepEqual(safeContourOptions(p),p);p.gh.on=false;assert.equal(p.temp.on,true);
   assert.equal(safeContourOptions({gh:{on:true,level:999,step:0,color:'bad'}}).gh.level,500);
 });
-test('all three line families render together with unambiguous unit labels',()=>{
+test('both line families render together with unambiguous unit labels',()=>{
   const labels=[],strokes=[];
   const ctx={clearRect(){},beginPath(){},moveTo(){},lineTo(){},setLineDash(){},stroke(){strokes.push(this.strokeStyle)},strokeText(){},fillText(text){labels.push(text)}};
   const map={getBounds:()=>({getWest:()=>-180,getEast:()=>180}),latLngToContainerPoint:([lat,lon])=>({x:(lon+180)*4,y:(90-lat)*4})};
-  const p=defaultContours();for(const k of ['gh','temp','mslp'])p[k].on=true;
-  const layers=[{field:'gh',level:500,segments:[[-100,40,-90,40,570]]},{field:'temp',level:850,segments:[[-50,20,-40,20,-4]]},{field:'mslp',level:0,segments:[[0,0,10,0,1012]]}];
+  const p=defaultContours();for(const k of ['gh','temp'])p[k].on=true;
+  const layers=[{field:'gh',level:500,segments:[[-100,40,-90,40,570]]},{field:'temp',level:850,segments:[[-50,20,-40,20,-4]]}];
   drawContours(ctx,map,layers,p,1440,720);
-  assert.ok(labels.includes('500h 570 dam'));assert.ok(labels.includes('850h -4\u00b0C'));assert.ok(labels.includes('1012 hPa'));assert.equal(strokes.length,6);
+  assert.ok(labels.includes('500h 570 dam'));assert.ok(labels.includes('850h -4\u00b0C'));assert.equal(strokes.length,4);assert.ok(strokes.includes(contourColor('gh',570)));assert.ok(strokes.includes(contourColor('temp',-4)));
+});
+
+test('reference colors follow values and clamp beyond the legend endpoints',()=>{
+  assert.equal(contourColor('temp',0),'#66caf0');
+  assert.equal(contourColor('temp',-4),'#1857bc');
+  assert.equal(contourColor('gh',570),'#f54f00');
+  assert.notEqual(contourColor('temp',-4),contourColor('temp',20));
+  assert.equal(contourColor('gh',300),contourColor('gh',470));
+  assert.equal(contourColor('gh',900),contourColor('gh',600));
+  assert.equal(contourColor('temp',-80),contourColor('temp',-40));
+  assert.throws(()=>contourColor('mslp',1012));
+  assert.equal(safeContourOptions({mslp:{on:true}}).mslp,undefined);
 });

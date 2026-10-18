@@ -1,3 +1,4 @@
+import { contourColor } from './contourPalettes.mjs';
 import { MAX_RUN_AGE_MS, decodeFrameResponse } from './contourData.mjs';
 import { worldCopies } from './worldMap.mjs';
 export const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/';
@@ -5,11 +6,10 @@ export const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
 export const CONTOUR_FIELDS = {
   gh: { label: 'Geopotential height', units: 'dam', steps: [3, 6, 12], bounds: [-100, 6000] },
   temp: { label: 'Temperature', units: 'degC', steps: [2, 4, 8], bounds: [-173.2, 126.9] },
-  mslp: { label: 'MSLP', units: 'hPa', steps: [2, 4, 8], bounds: [800, 1100] },
 };
 export function defaultContours() {
-  return { labels: true, gh: { on: false, level: 500, step: 6, color: '#ffd166' },
-    temp: { on: false, level: 850, step: 4, color: '#66d9ff' }, mslp: { on: false, level: 0, step: 4, color: '#ffffff' } };
+  return { labels: true, gh: { on: false, level: 500, step: 6,  },
+    temp: { on: false, level: 850, step: 4,  } };
 }
 export function safeContourOptions(raw) {
   const result = defaultContours(); if (!raw) return result;
@@ -17,9 +17,8 @@ export function safeContourOptions(raw) {
   for (const key of Object.keys(CONTOUR_FIELDS)) {
     const p = raw[key]; if (!p) continue;
     result[key].on = p.on === true;
-    if (key !== 'mslp' && PRESSURE_LEVELS.includes(p.level)) result[key].level = p.level;
+    if (PRESSURE_LEVELS.includes(p.level)) result[key].level = p.level;
     if (CONTOUR_FIELDS[key].steps.includes(p.step)) result[key].step = p.step;
-    if (/^#[a-f0-9]{6}$/i.test(p.color || '')) result[key].color = p.color;
   }
   return result;
 }
@@ -46,7 +45,7 @@ export function contourSnapshot(manifest, timestamp) {
   return Math.abs(Date.parse(frame.validTime) - timestamp) <= 5400000 ? frame : null;
 }
 export function contourPath(manifest, frame, field, level) {
-  if (!CONTOUR_FIELDS[field] || field === 'mslp' && level !== 0 || field !== 'mslp' && !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
+  if (!CONTOUR_FIELDS[field] || !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
   if (!manifest.frames.includes(frame)) throw Error('Unknown contour snapshot');
   const token = manifest.runTime.slice(0, 10).replaceAll('-', '') + '_' + manifest.runTime.slice(11, 13);
   const stamp = frame.validTime.replaceAll('-', '').replaceAll(':', '');
@@ -86,6 +85,10 @@ export function contourSegments(values, grid, step) {
   }
   return segments;
 }
+function contourHalo(color) {
+  const rgb = [1,3,5].map(i => parseInt(color.slice(i,i+2),16));
+  return rgb[0]*.2126 + rgb[1]*.7152 + rgb[2]*.0722 < 85 ? '#e8eef4' : '#102131';
+}
 const clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
 export function drawContours(ctx, map, layers, options, width, height) {
   ctx.clearRect(0, 0, width, height); const bounds = map.getBounds(), occupied = new Set(), labelGroups = [], boxes = [];
@@ -97,10 +100,19 @@ export function drawContours(ctx, map, layers, options, width, height) {
       if (Math.max(a.x,b.x)<0 || Math.min(a.x,b.x)>width || Math.max(a.y,b.y)<0 || Math.min(a.y,b.y)>height) continue;
       visible.push([a,b,s[4]]);
     }
-    ctx.beginPath(); for (const [a,b] of visible) { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+    const groups = new Map();
+    for (const segment of visible) {
+      const value = segment[2]; if (!groups.has(value)) groups.set(value, []);
+      groups.get(value).push(segment);
+    }
     ctx.lineJoin = 'round'; ctx.setLineDash(layer.field === 'temp' ? [5,3] : []);
-    ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.8; ctx.stroke();
-    ctx.strokeStyle = config.color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke(); ctx.setLineDash([]);
+    for (const [value, segments] of groups) {
+      const color = contourColor(layer.field, value);
+      ctx.beginPath(); for (const [a,b] of segments) { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+      ctx.strokeStyle = contourHalo(color); ctx.lineWidth = 3.8; ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke();
+    }
+    ctx.setLineDash([]);
     labelGroups.push({ layer, config, visible });
   }
   if (options.labels) {
@@ -110,11 +122,12 @@ export function drawContours(ctx, map, layers, options, width, height) {
         const x=(a.x+b.x)/2, y=(a.y+b.y)/2;
         if (x<45 || x>width-45 || y<18 || y>height-18) continue;
         const cell = layer.field+':'+Math.floor(x/135)+':'+Math.floor(y/65); if (occupied.has(cell)) continue;
-        const label = layer.field === 'mslp' ? `${level} hPa` : `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
+        const label = `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
         const half=(ctx.measureText?.(label).width || label.length*6)/2;
         if(boxes.some(b=>Math.abs(b.x-x)<b.half+half+5 && Math.abs(b.y-y)<19)) continue;
         occupied.add(cell); boxes.push({x,y,half});
-        ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=config.color; ctx.fillText(label,x,y);
+        const color = contourColor(layer.field, level);
+        ctx.strokeStyle = contourHalo(color); ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=color; ctx.fillText(label,x,y);
       }
     }
   }

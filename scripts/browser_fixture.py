@@ -16,8 +16,6 @@ syn_frames = []
 lat, lon = np.meshgrid(np.linspace(-90, 90, 145), -180 + np.arange(288) * 1.25, indexing='ij')
 for i in range(2):
     valid = start + timedelta(hours=i * 3)
-    slp = 1010 + 15 * np.sin(np.deg2rad(lat * 2)) + 10 * np.cos(np.deg2rad(lon)) + i
-    write_field(synoptic, token, valid, 'mslp', 0, slp, run)
     for level, height, temperature in [(925, 75, 15), (850, 150, 10), (700, 300, 0), (500, 560, -15), (300, 920, -40)]:
         gh = height + 40 * np.sin(np.deg2rad(lat * 2)) + 20 * np.cos(np.deg2rad(lon)) + i * 4
         temp = temperature - 40 * np.abs(lat) / 90 + 10 * np.sin(np.deg2rad(lon)) + i
