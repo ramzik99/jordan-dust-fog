@@ -1,17 +1,17 @@
 const __pluginConfig =  {
   "name": "windy-plugin-jordan-dust-fog",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "icon": "🌫️",
-  "title": "Dust forecast",
-  "description": "Native-grid GEOS-FP dust forecasts worldwide, point thresholds and satellite imagery.",
+  "title": "Synoptic Atlas",
+  "description": "Global GEOS-FP dust, independent geopotential height, temperature and MSLP contours, and satellite imagery.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": true,
   "listenToSingleclick": true,
-  "built": 1792339656897,
-  "builtReadable": "2026-10-18T16:07:36.897Z"
+  "built": 1792339863866,
+  "builtReadable": "2026-10-18T16:11:03.866Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -692,7 +692,7 @@ const config = {
 
 const MAX_RUN_AGE_MS = 36 * 3600000;
 const FIELDS = ['dustSurface', 'dustFine', 'dustAod'];
-const validDate = value => typeof value === 'string' && value.endsWith('Z') && Number.isFinite(Date.parse(value));
+const validDate$1 = value => typeof value === 'string' && value.endsWith('Z') && Number.isFinite(Date.parse(value));
 function increasing(values) {
   return Array.isArray(values) && values.length > 0 && values.every((v, i) =>
     Number.isFinite(v) && (i === 0 || v > values[i - 1]));
@@ -722,7 +722,7 @@ function wrapLongitude(value) {
 
 function validateManifest(data, now = Date.now()) {
   if (data?.schemaVersion !== 2 || data.coverage !== 'global' || data.source !== 'NASA GEOS-FP') throw Error('Unsupported global manifest');
-  if (!validDate(data.runTime) || !validDate(data.retrievedAt)) throw Error('Invalid source timestamps');
+  if (!validDate$1(data.runTime) || !validDate$1(data.retrievedAt)) throw Error('Invalid source timestamps');
   const run = Date.parse(data.runTime);
   if (run > now + 3600000 || now - run > MAX_RUN_AGE_MS) throw Error('GEOS forecast run is stale or invalid');
   if (Date.parse(data.retrievedAt) < run || Date.parse(data.retrievedAt) > now + 3600000) throw Error('Invalid retrieval time');
@@ -736,7 +736,7 @@ function validateManifest(data, now = Date.now()) {
   const paths = new Set();
   const token = data.runTime.slice(0, 10).replaceAll('-', '') + '_' + data.runTime.slice(11, 13);
   for (const f of data.frames) {
-    if (![f.start, f.end, f.validTime].every(validDate)) throw Error('Invalid frame times');
+    if (![f.start, f.end, f.validTime].every(validDate$1)) throw Error('Invalid frame times');
     const start = Date.parse(f.start), end = Date.parse(f.end);
     if (start < run || start < lastEnd || end - start !== 10800000 || Date.parse(f.validTime) !== (start + end) / 2) throw Error('Invalid or overlapping averaging intervals');
     const stamp = f.validTime.replaceAll('-', '').replaceAll(':', '');
@@ -745,6 +745,25 @@ function validateManifest(data, now = Date.now()) {
   }
   if (lastEnd <= now) throw Error('Forecast has expired');
   return data;
+}
+
+async function decodeFrameResponse(response) {
+  if (typeof DecompressionStream === 'undefined') throw Error('This browser does not support compressed forecast files');
+  const compressed = new Uint8Array(await response.arrayBuffer());
+  if (compressed.byteLength > 2 * 1024 * 1024) throw Error('Compressed forecast exceeds size limit');
+  const reader = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const parts = []; let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      size += value.byteLength;
+      if (size > 8 * 1024 * 1024) throw Error('Decoded forecast exceeds size limit');
+      parts.push(value);
+    }
+  } finally { await reader.cancel(); }
+  const joined = new Uint8Array(size); let offset = 0;
+  for (const part of parts) { joined.set(part, offset); offset += part.byteLength; }
+  return JSON.parse(new TextDecoder().decode(joined));
 }
 
 const DATA_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-dust-data/global/';
@@ -881,7 +900,7 @@ function makeTexture(grid, frame, field, canvasFactory = () => document.createEl
   }
   ctx.putImageData(pixels, 0, 0); return canvas;
 }
-const clampLat$1 = value => Math.max(-85.05112878, Math.min(85.05112878, value));
+const clampLat$2 = value => Math.max(-85.05112878, Math.min(85.05112878, value));
 function drawTexture(ctx, map, grid, texture, width, height, opacity = .6) {
   ctx.clearRect(0, 0, width, height); if (!texture) return;
   const dy = grid.sampling.latitudeDegrees / 2, dx = grid.sampling.longitudeDegrees / 2;
@@ -891,8 +910,8 @@ function drawTexture(ctx, map, grid, texture, width, height, opacity = .6) {
     const right = map.latLngToContainerPoint([0, grid.longitudes.at(-1) + offset + dx]).x;
     if (right < 0 || left > width) continue;
     for (let y = 0; y < grid.latitudes.length; y++) {
-      const top = map.latLngToContainerPoint([clampLat$1(grid.latitudes[y] + dy), 0]).y;
-      const bottom = map.latLngToContainerPoint([clampLat$1(grid.latitudes[y] - dy), 0]).y;
+      const top = map.latLngToContainerPoint([clampLat$2(grid.latitudes[y] + dy), 0]).y;
+      const bottom = map.latLngToContainerPoint([clampLat$2(grid.latitudes[y] - dy), 0]).y;
       if (bottom < 0 || top > height || bottom <= top) continue;
       ctx.drawImage(texture, 0, y, texture.width, 1, left, top, right - left, bottom - top);
     }
@@ -934,12 +953,12 @@ function parseCapabilities(text, layerName, now = Date.now()) {
   }
   throw Error('Requested dust satellite layer unavailable');
 }
-const R = 6378137, clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
+const R = 6378137, clampLat$1 = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
 const mercatorX = lon => R * lon * Math.PI / 180;
-const mercatorY = lat => R * Math.log(Math.tan(Math.PI / 4 + clampLat(lat) * Math.PI / 360));
+const mercatorY = lat => R * Math.log(Math.tan(Math.PI / 4 + clampLat$1(lat) * Math.PI / 360));
 function satelliteRequests(source, time, bounds, size) {
   if (!SATELLITES[source] || !Number.isFinite(Date.parse(time))) throw Error('Invalid satellite request');
-  const product = SATELLITES[source], south = clampLat(bounds.south), north = clampLat(bounds.north);
+  const product = SATELLITES[source], south = clampLat$1(bounds.south), north = clampLat$1(bounds.north);
   if (north <= south || bounds.east <= bounds.west) return [];
   const results = [], density = Math.min(1, 1536 / Math.max(size.width, size.height));
   for (const offset of worldCopies(bounds.west, bounds.east)) {
@@ -986,50 +1005,257 @@ function drawSatellite(ctx, map, frame, width, height, opacity = 1) {
   ctx.globalAlpha = 1;
 }
 
+const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/';
+const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
+const CONTOUR_FIELDS = {
+  gh: { label: 'Geopotential height', units: 'dam', steps: [3, 6, 12], bounds: [-100, 6000] },
+  temp: { label: 'Temperature', units: 'degC', steps: [2, 4, 8], bounds: [-173.2, 126.9] },
+  mslp: { label: 'MSLP', units: 'hPa', steps: [2, 4, 8], bounds: [800, 1100] },
+};
+function defaultContours() {
+  return { labels: true, gh: { on: false, level: 500, step: 6, color: '#ffd166' },
+    temp: { on: false, level: 850, step: 4, color: '#66d9ff' }, mslp: { on: false, level: 0, step: 4, color: '#ffffff' } };
+}
+function safeContourOptions(raw) {
+  const result = defaultContours(); if (!raw) return result;
+  result.labels = raw.labels !== false;
+  for (const key of Object.keys(CONTOUR_FIELDS)) {
+    const p = raw[key]; if (!p) continue;
+    result[key].on = p.on === true;
+    if (key !== 'mslp' && PRESSURE_LEVELS.includes(p.level)) result[key].level = p.level;
+    if (CONTOUR_FIELDS[key].steps.includes(p.step)) result[key].step = p.step;
+    if (/^#[a-f0-9]{6}$/i.test(p.color || '')) result[key].color = p.color;
+  }
+  return result;
+}
+const validDate = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value) && Number.isFinite(Date.parse(value));
+function validateContourManifest(m, now = Date.now()) {
+  if (m?.schemaVersion !== 1 || m.source !== 'NASA GEOS-FP' || m.collection !== 'inst3_3d_asm_Np') throw Error('Unsupported contour data');
+  if (!validDate(m.runTime) || !validDate(m.retrievedAt) || Date.parse(m.runTime) > now + 3600000 || now - Date.parse(m.runTime) > MAX_RUN_AGE_MS || Date.parse(m.retrievedAt) < Date.parse(m.runTime) || Date.parse(m.retrievedAt) > now + 3600000) throw Error('Contour run is stale or invalid');
+  const g = m.grid;
+  if (!g || g.width !== 288 || g.height !== 145 || g.longitudeStart !== -180 || g.latitudeStart !== -90 || g.step !== 1.25 || JSON.stringify(m.levels) !== JSON.stringify(PRESSURE_LEVELS)) throw Error('Unexpected contour grid or pressure levels');
+  if (Object.keys(CONTOUR_FIELDS).some(k => m.units?.[k] !== CONTOUR_FIELDS[k].units)) throw Error('Unexpected contour units');
+  if (!Array.isArray(m.frames) || m.frames.length < 2 || m.frames.length > 42) throw Error('Invalid contour snapshots');
+  let previous = -Infinity;
+  for (const f of m.frames) {
+    const t = Date.parse(f.validTime);
+    if (!validDate(f.validTime) || t < Date.parse(m.runTime) || t > Date.parse(m.runTime) + 120 * 3600000 || t <= previous || previous !== -Infinity && t - previous !== 10800000) throw Error('Invalid contour snapshot time');
+    previous = t;
+  }
+  if (previous + 5400000 < now) throw Error('Contour forecast expired');
+  return m;
+}
+function contourSnapshot(manifest, timestamp) {
+  if (!manifest || !Number.isFinite(timestamp)) return null;
+  const frame = manifest.frames.reduce((best, f) => Math.abs(Date.parse(f.validTime) - timestamp) < Math.abs(Date.parse(best.validTime) - timestamp) ? f : best);
+  return Math.abs(Date.parse(frame.validTime) - timestamp) <= 5400000 ? frame : null;
+}
+function contourPath(manifest, frame, field, level) {
+  if (!CONTOUR_FIELDS[field] || field === 'mslp' && level !== 0 || field !== 'mslp' && !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
+  if (!manifest.frames.includes(frame)) throw Error('Unknown contour snapshot');
+  const token = manifest.runTime.slice(0, 10).replaceAll('-', '') + '_' + manifest.runTime.slice(11, 13);
+  const stamp = frame.validTime.replaceAll('-', '').replaceAll(':', '');
+  return `runs/${token}/${stamp}/${field}-${level}.json.gz`;
+}
+function validateContourField(data, manifest, frame, field, level) {
+  if (data?.schemaVersion !== 1 || data.runTime !== manifest.runTime || data.validTime !== frame.validTime || data.field !== field || data.level !== level || data.units !== CONTOUR_FIELDS[field]?.units) throw Error('Contour field does not match its snapshot');
+  const [lo, hi] = CONTOUR_FIELDS[field].bounds;
+  if (!Array.isArray(data.values) || data.values.length !== manifest.grid.width * manifest.grid.height || data.values.some(v => v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi))) throw Error('Invalid contour values');
+  return Float32Array.from(data.values, v => v === null ? NaN : v);
+}
+// Marching squares with a bilinear saddle decider. Missing corners leave gaps.
+// A periodic final column closes the seam at +180 without long crossing lines.
+function contourSegments(values, grid, step) {
+  const { width: w, height: h, longitudeStart: x0, latitudeStart: y0, step: d } = grid;
+  if (values.length !== w * h || !Number.isFinite(step) || step <= 0) throw Error('Invalid contour input');
+  let min = Infinity, max = -Infinity;
+  for (const v of values) if (Number.isFinite(v)) { min = Math.min(min, v); max = Math.max(max, v); }
+  if (min === Infinity || min === max) return [];
+  const first = Math.ceil(min / step) * step, count = Math.floor((max - first) / step) + 1;
+  if (count > 200) throw Error('Contour interval is too small');
+  const segments = [], table = { 1: [[3,0]], 2: [[0,1]], 3: [[3,1]], 4: [[1,2]], 6: [[0,2]], 7: [[3,2]],
+    8: [[2,3]], 9: [[0,2]], 11: [[1,2]], 12: [[1,3]], 13: [[0,1]], 14: [[3,0]] };
+  for (let n = 0; n < count; n++) {
+    const level = first + n * step;
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w; x++) {
+      const next = (x + 1) % w;
+      const v = [values[y*w+x], values[y*w+next], values[(y+1)*w+next], values[(y+1)*w+x]];
+      if (v.some(a => !Number.isFinite(a))) continue;
+      const mask = v.reduce((m, a, i) => m | (a >= level ? 1 << i : 0), 0);
+      if (!mask || mask === 15) continue;
+      const pairs = mask === 5 || mask === 10 ? ((v[0]-level)*(v[2]-level)-(v[1]-level)*(v[3]-level) >= 0 ? [[0,1],[2,3]] : [[3,0],[1,2]]) : table[mask];
+      const positions = [[x0+x*d,y0+y*d],[x0+(x+1)*d,y0+y*d],[x0+(x+1)*d,y0+(y+1)*d],[x0+x*d,y0+(y+1)*d]];
+      const cross = edge => { const a = edge, b = (edge + 1) % 4, f = (level - v[a]) / (v[b] - v[a]); return [positions[a][0] + f * (positions[b][0]-positions[a][0]), positions[a][1] + f * (positions[b][1]-positions[a][1])]; };
+      for (const [a,b] of pairs) { const p = cross(a), q = cross(b); if (p.every(Number.isFinite) && q.every(Number.isFinite) && Math.hypot(p[0]-q[0],p[1]-q[1]) > 1e-9) segments.push([p[0],p[1],q[0],q[1],level]); }
+    }
+  }
+  return segments;
+}
+const clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
+function drawContours(ctx, map, layers, options, width, height) {
+  ctx.clearRect(0, 0, width, height); const bounds = map.getBounds(), occupied = new Set();
+  for (const layer of layers) {
+    const config = options[layer.field], visible = [];
+    if (!config?.on || config.level !== layer.level) continue;
+    for (const offset of worldCopies(bounds.getWest(), bounds.getEast())) for (const s of layer.segments) {
+      const a = map.latLngToContainerPoint([clampLat(s[1]), s[0]+offset]), b = map.latLngToContainerPoint([clampLat(s[3]), s[2]+offset]);
+      if (Math.max(a.x,b.x)<0 || Math.min(a.x,b.x)>width || Math.max(a.y,b.y)<0 || Math.min(a.y,b.y)>height) continue;
+      visible.push([a,b,s[4]]);
+    }
+    ctx.beginPath(); for (const [a,b] of visible) { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+    ctx.lineJoin = 'round'; ctx.setLineDash(layer.field === 'temp' ? [5,3] : []);
+    ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.8; ctx.stroke();
+    ctx.strokeStyle = config.color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke(); ctx.setLineDash([]);
+    if (options.labels) {
+      ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const [a,b,level] of visible) {
+        const x=(a.x+b.x)/2, y=(a.y+b.y)/2;
+        if (x<45 || x>width-45 || y<18 || y>height-18) continue;
+        const cell = Math.floor(x/135)+':'+Math.floor(y/65); if (occupied.has(cell)) continue; occupied.add(cell);
+        const label = layer.field === 'mslp' ? `${level} hPa` : `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
+        ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=config.color; ctx.fillText(label,x,y);
+      }
+    }
+  }
+  ctx.setLineDash([]);
+}
+class ContourOverlay {
+  constructor({ map, onChange = () => {}, onRender = () => {}, fetcher = (...args) => globalThis.fetch(...args), base = CONTOUR_BASE }) {
+    this.map=map; this.onChange=onChange; this.onRender=onRender; this.fetcher=fetcher; this.base=base;
+    this.manifest=null; this.manifestAt=0; this.cache=new Map(); this.geometry=new Map(); this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
+    this.canvas=document.createElement('canvas'); this.canvas.dataset.synopticContours='map'; this.canvas.setAttribute('aria-hidden','true');
+    Object.assign(this.canvas.style,{position:'absolute',left:'0',top:'0',pointerEvents:'none',zIndex:'450'}); map.getContainer().appendChild(this.canvas);
+  }
+  set(options, timestamp, enabled) {
+    const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled]);
+    if(this.dead || signature===this.signature) return;
+    this.signature=signature; this.options=safe; this.timestamp=timestamp; this.enabled=enabled;
+    this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.layers=[]; this.onRender();
+    const fields=Object.keys(CONTOUR_FIELDS).filter(k=>safe[k].on);
+    if(!enabled || !fields.length) { this.onChange({loading:false,errors:[],active:[]}); return; }
+    this.onChange({loading:true,errors:[],active:[]});
+    this.timer=setTimeout(()=>void this.load(fields,this.epoch),120);
+  }
+  async load(fields, epoch) {
+    const abort=new AbortController(); this.abort=abort; const timeout=setTimeout(()=>abort.abort(),45000), errors=[];
+    try {
+      if(!this.manifest || Date.now()-this.manifestAt>300000) {
+        const response=await this.fetcher(this.base+'latest.json?t='+Math.floor(Date.now()/300000),{signal:abort.signal});
+        if(!response.ok) throw Error('Contour index unavailable (HTTP '+response.status+')');
+        const text=await response.text(); if(text.length>50000) throw Error('Contour index exceeds size limit');
+        const m=validateContourManifest(JSON.parse(text));
+        if(this.manifest && m.runTime<this.manifest.runTime) throw Error('Server returned an older contour run');
+        if(this.dead || epoch!==this.epoch) return; this.manifest=m; this.manifestAt=Date.now();
+      }
+      const m=validateContourManifest(this.manifest), frame=contourSnapshot(m,this.timestamp);
+      if(!frame) throw Error('No contour snapshot within 90 minutes of the Windy forecast time');
+      await Promise.all(fields.map(async field=>{
+        const config=this.options[field], key=m.runTime+':'+frame.validTime+':'+field+':'+config.level;
+        try {
+          let values=this.cache.get(key);
+          if(!values) {
+            const response=await this.fetcher(this.base+contourPath(m,frame,field,config.level),{signal:abort.signal});
+            if(!response.ok) throw Error('HTTP '+response.status);
+            values=validateContourField(await decodeFrameResponse(response),m,frame,field,config.level);
+          }
+          if(this.dead || epoch!==this.epoch || abort.signal.aborted) return;
+          this.cache.delete(key); this.cache.set(key,values); while(this.cache.size>9) this.cache.delete(this.cache.keys().next().value);
+          const geometryKey=key+':'+config.step;
+          let segments=this.geometry.get(geometryKey);
+          if(!segments) { segments=contourSegments(values,m.grid,config.step); this.geometry.set(geometryKey,segments); while(this.geometry.size>3) this.geometry.delete(this.geometry.keys().next().value); }
+          if(this.dead || epoch!==this.epoch) return;
+          this.layers.push({field,level:config.level,segments}); this.onRender();
+        } catch(error) { if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(error?.name==='AbortError'?'request timed out':error.message)); }
+      }));
+      if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:frame.validTime,runTime:m.runTime});
+    } catch(error) { if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors:[error?.name==='AbortError'?'Contour request timed out':error.message],active:[]}); }
+    finally { clearTimeout(timeout); }
+  }
+  paint() {
+    if(this.dead) return;
+    const size=this.map.getSize(), ratio=Math.min(window.devicePixelRatio||1,2), c=this.canvas;
+    if(c.width!==Math.round(size.x*ratio) || c.height!==Math.round(size.y*ratio)) { c.width=Math.round(size.x*ratio); c.height=Math.round(size.y*ratio); }
+    c.style.width=size.x+'px'; c.style.height=size.y+'px'; const ctx=c.getContext('2d'); if(!ctx) return;
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    const fresh=this.manifest && Date.now()-Date.parse(this.manifest.runTime)<=MAX_RUN_AGE_MS;
+    const shown=this.enabled && fresh?this.layers:[];
+    c.dataset.layers=shown.map(l=>l.field+':'+l.level).sort().join(',');
+    drawContours(ctx,this.map,shown,this.options,size.x,size.y);
+  }
+  refresh() { this.manifestAt=0; this.signature=''; this.set(this.options,this.timestamp,this.enabled); }
+  destroy() { this.dead=true; this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.cache.clear(); this.geometry.clear(); this.layers=[]; this.canvas.remove(); }
+}
+
 /* src/pluginEntry.svelte generated by Svelte v4.2.20 */
 
 function add_css(target) {
-	append_styles(target, "svelte-17wy0sx", ".panel.svelte-17wy0sx.svelte-17wy0sx,.restore.svelte-17wy0sx.svelte-17wy0sx{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-17wy0sx.svelte-17wy0sx{width:310px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-17wy0sx.svelte-17wy0sx{padding:12px}header.svelte-17wy0sx.svelte-17wy0sx{display:flex;justify-content:space-between;gap:10px}header.svelte-17wy0sx strong.svelte-17wy0sx{font-size:19px}small.svelte-17wy0sx.svelte-17wy0sx{display:block;font-size:11px;color:#bbcad6}button.svelte-17wy0sx.svelte-17wy0sx,select.svelte-17wy0sx.svelte-17wy0sx,input.svelte-17wy0sx.svelte-17wy0sx{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 7px}button.svelte-17wy0sx.svelte-17wy0sx,select.svelte-17wy0sx.svelte-17wy0sx{cursor:pointer}button.svelte-17wy0sx.svelte-17wy0sx:disabled,select.svelte-17wy0sx.svelte-17wy0sx:disabled{opacity:.5;cursor:default}button.svelte-17wy0sx.svelte-17wy0sx:focus-visible,select.svelte-17wy0sx.svelte-17wy0sx:focus-visible,input.svelte-17wy0sx.svelte-17wy0sx:focus-visible{outline:2px solid #f9a825;outline-offset:2px}label.svelte-17wy0sx.svelte-17wy0sx{display:flex;align-items:center;gap:4px}input[type=checkbox].svelte-17wy0sx.svelte-17wy0sx{accent-color:#f9a825}nav.svelte-17wy0sx.svelte-17wy0sx{display:flex;align-items:center;gap:6px;margin:14px 0}nav.svelte-17wy0sx label.svelte-17wy0sx{margin-left:auto}.active.svelte-17wy0sx.svelte-17wy0sx{border-color:#f9a825;background:#39463d}.place.svelte-17wy0sx.svelte-17wy0sx{justify-content:space-between;margin:10px 0 5px}.place.svelte-17wy0sx select.svelte-17wy0sx{max-width:205px}.coordinates.svelte-17wy0sx.svelte-17wy0sx{display:flex;gap:5px;margin:8px 0}.coordinates.svelte-17wy0sx label.svelte-17wy0sx{font-size:11px;min-width:0}.coordinates.svelte-17wy0sx input.svelte-17wy0sx{width:75px;max-width:100%;box-sizing:border-box}.point-name.svelte-17wy0sx.svelte-17wy0sx{display:flex;justify-content:space-between;align-items:center;gap:5px}.point-name.svelte-17wy0sx button.svelte-17wy0sx{font-size:10px}.field-controls.svelte-17wy0sx.svelte-17wy0sx{display:flex;gap:5px;align-items:center;margin-top:12px}.field-controls.svelte-17wy0sx select.svelte-17wy0sx{min-width:0;flex:1}.reading.svelte-17wy0sx.svelte-17wy0sx{background:#21384a;border-radius:10px;padding:12px;margin:12px 0}.reading.svelte-17wy0sx>strong.svelte-17wy0sx{display:block;font-size:28px}.reading.svelte-17wy0sx strong small.svelte-17wy0sx{display:inline;font-size:14px}.reading.svelte-17wy0sx span.svelte-17wy0sx{font-size:12px}dl.svelte-17wy0sx.svelte-17wy0sx{margin:10px 0}dl.svelte-17wy0sx>div.svelte-17wy0sx{display:flex;justify-content:space-between;gap:8px;margin:5px 0}dt.svelte-17wy0sx.svelte-17wy0sx{font-size:11px;color:#bbcad6}dd.svelte-17wy0sx.svelte-17wy0sx{margin:0;font-size:12px}.threshold.svelte-17wy0sx.svelte-17wy0sx{border:1px solid #42586b;border-radius:9px;padding:9px;margin-top:12px}.threshold.svelte-17wy0sx label.svelte-17wy0sx{font-size:11px;justify-content:space-between}.threshold.svelte-17wy0sx input.svelte-17wy0sx{width:60px}.threshold.svelte-17wy0sx p.svelte-17wy0sx{margin:6px 0;font-size:12px}.threshold.svelte-17wy0sx .met.svelte-17wy0sx{background:#6d441d;color:#fff0c5;padding:5px;border-radius:5px}.legend.svelte-17wy0sx.svelte-17wy0sx{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin:14px 0 3px}.legend.svelte-17wy0sx span.svelte-17wy0sx{border-top:7px solid var(--color);padding-top:3px;font-size:10px}.error.svelte-17wy0sx.svelte-17wy0sx{background:#692f30;padding:9px;border-radius:7px;font-size:12px}.loading.svelte-17wy0sx.svelte-17wy0sx{font-size:12px;color:#ffd486}details.svelte-17wy0sx.svelte-17wy0sx{margin-top:12px}summary.svelte-17wy0sx.svelte-17wy0sx{cursor:pointer;font-size:12px}details.svelte-17wy0sx p.svelte-17wy0sx,.explain.svelte-17wy0sx.svelte-17wy0sx{font-size:11px;color:#bbcad6}a.svelte-17wy0sx.svelte-17wy0sx{color:#ffd486}.timeline.svelte-17wy0sx.svelte-17wy0sx{display:flex;gap:5px;flex-wrap:wrap;max-height:160px;overflow:auto;margin-top:8px}.timeline.svelte-17wy0sx button.svelte-17wy0sx{font-size:10px}.series.svelte-17wy0sx.svelte-17wy0sx{max-height:220px;overflow:auto;margin-top:8px}table.svelte-17wy0sx.svelte-17wy0sx{width:100%;border-collapse:collapse;font-size:10px}td.svelte-17wy0sx.svelte-17wy0sx,th.svelte-17wy0sx.svelte-17wy0sx{padding:4px;border-bottom:1px solid #42586b;text-align:right}td.svelte-17wy0sx.svelte-17wy0sx:first-child,th.svelte-17wy0sx.svelte-17wy0sx:first-child{text-align:left}td.svelte-17wy0sx button.svelte-17wy0sx{font-size:10px}.resolution.svelte-17wy0sx.svelte-17wy0sx{margin-top:12px}.observation.svelte-17wy0sx.svelte-17wy0sx{background:#21384a;padding:9px;border-radius:8px}.opacity.svelte-17wy0sx.svelte-17wy0sx{justify-content:space-between;margin-top:9px}.opacity.svelte-17wy0sx input.svelte-17wy0sx{width:130px}footer.svelte-17wy0sx.svelte-17wy0sx{border-top:1px solid #42586b;margin-top:12px;padding-top:8px}footer.svelte-17wy0sx small.svelte-17wy0sx{font-size:10px;margin-top:6px}@media(max-width:600px){.panel.svelte-17wy0sx.svelte-17wy0sx{bottom:100px;width:285px;max-height:62dvh;padding:12px}.restore.svelte-17wy0sx.svelte-17wy0sx{bottom:100px}.coordinates.svelte-17wy0sx input.svelte-17wy0sx{width:65px}}");
+	append_styles(target, "svelte-1b6hqhz", ".panel.svelte-1b6hqhz.svelte-1b6hqhz,.restore.svelte-1b6hqhz.svelte-1b6hqhz{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-1b6hqhz.svelte-1b6hqhz{width:310px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-1b6hqhz.svelte-1b6hqhz{padding:12px}header.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;justify-content:space-between;gap:10px}header.svelte-1b6hqhz strong.svelte-1b6hqhz{font-size:19px}small.svelte-1b6hqhz.svelte-1b6hqhz{display:block;font-size:11px;color:#bbcad6}button.svelte-1b6hqhz.svelte-1b6hqhz,select.svelte-1b6hqhz.svelte-1b6hqhz,input.svelte-1b6hqhz.svelte-1b6hqhz{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 7px}button.svelte-1b6hqhz.svelte-1b6hqhz,select.svelte-1b6hqhz.svelte-1b6hqhz{cursor:pointer}button.svelte-1b6hqhz.svelte-1b6hqhz:disabled,select.svelte-1b6hqhz.svelte-1b6hqhz:disabled{opacity:.5;cursor:default}button.svelte-1b6hqhz.svelte-1b6hqhz:focus-visible,select.svelte-1b6hqhz.svelte-1b6hqhz:focus-visible,input.svelte-1b6hqhz.svelte-1b6hqhz:focus-visible{outline:2px solid #f9a825;outline-offset:2px}label.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;align-items:center;gap:4px}input[type=checkbox].svelte-1b6hqhz.svelte-1b6hqhz{accent-color:#f9a825}nav.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;align-items:center;gap:6px;margin:14px 0}nav.svelte-1b6hqhz label.svelte-1b6hqhz{margin-left:auto}.active.svelte-1b6hqhz.svelte-1b6hqhz{border-color:#f9a825;background:#39463d}.place.svelte-1b6hqhz.svelte-1b6hqhz{justify-content:space-between;margin:10px 0 5px}.place.svelte-1b6hqhz select.svelte-1b6hqhz{max-width:205px}.coordinates.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;gap:5px;margin:8px 0}.coordinates.svelte-1b6hqhz label.svelte-1b6hqhz{font-size:11px;min-width:0}.coordinates.svelte-1b6hqhz input.svelte-1b6hqhz{width:75px;max-width:100%;box-sizing:border-box}.point-name.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;justify-content:space-between;align-items:center;gap:5px}.point-name.svelte-1b6hqhz button.svelte-1b6hqhz{font-size:10px}.field-controls.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;gap:5px;align-items:center;margin-top:12px}.field-controls.svelte-1b6hqhz select.svelte-1b6hqhz{min-width:0;flex:1}.reading.svelte-1b6hqhz.svelte-1b6hqhz{background:#21384a;border-radius:10px;padding:12px;margin:12px 0}.reading.svelte-1b6hqhz>strong.svelte-1b6hqhz{display:block;font-size:28px}.reading.svelte-1b6hqhz strong small.svelte-1b6hqhz{display:inline;font-size:14px}.reading.svelte-1b6hqhz span.svelte-1b6hqhz{font-size:12px}dl.svelte-1b6hqhz.svelte-1b6hqhz{margin:10px 0}dl.svelte-1b6hqhz>div.svelte-1b6hqhz{display:flex;justify-content:space-between;gap:8px;margin:5px 0}dt.svelte-1b6hqhz.svelte-1b6hqhz{font-size:11px;color:#bbcad6}dd.svelte-1b6hqhz.svelte-1b6hqhz{margin:0;font-size:12px}.threshold.svelte-1b6hqhz.svelte-1b6hqhz{border:1px solid #42586b;border-radius:9px;padding:9px;margin-top:12px}.threshold.svelte-1b6hqhz label.svelte-1b6hqhz{font-size:11px;justify-content:space-between}.threshold.svelte-1b6hqhz input.svelte-1b6hqhz{width:60px}.threshold.svelte-1b6hqhz p.svelte-1b6hqhz{margin:6px 0;font-size:12px}.threshold.svelte-1b6hqhz .met.svelte-1b6hqhz{background:#6d441d;color:#fff0c5;padding:5px;border-radius:5px}.legend.svelte-1b6hqhz.svelte-1b6hqhz{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;margin:14px 0 3px}.legend.svelte-1b6hqhz span.svelte-1b6hqhz{border-top:7px solid var(--color);padding-top:3px;font-size:10px}.error.svelte-1b6hqhz.svelte-1b6hqhz{background:#692f30;padding:9px;border-radius:7px;font-size:12px}.loading.svelte-1b6hqhz.svelte-1b6hqhz{font-size:12px;color:#ffd486}details.svelte-1b6hqhz.svelte-1b6hqhz{margin-top:12px}summary.svelte-1b6hqhz.svelte-1b6hqhz{cursor:pointer;font-size:12px}details.svelte-1b6hqhz p.svelte-1b6hqhz,.explain.svelte-1b6hqhz.svelte-1b6hqhz{font-size:11px;color:#bbcad6}a.svelte-1b6hqhz.svelte-1b6hqhz{color:#ffd486}.timeline.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;gap:5px;flex-wrap:wrap;max-height:160px;overflow:auto;margin-top:8px}.timeline.svelte-1b6hqhz button.svelte-1b6hqhz{font-size:10px}.series.svelte-1b6hqhz.svelte-1b6hqhz{max-height:220px;overflow:auto;margin-top:8px}table.svelte-1b6hqhz.svelte-1b6hqhz{width:100%;border-collapse:collapse;font-size:10px}td.svelte-1b6hqhz.svelte-1b6hqhz,th.svelte-1b6hqhz.svelte-1b6hqhz{padding:4px;border-bottom:1px solid #42586b;text-align:right}td.svelte-1b6hqhz.svelte-1b6hqhz:first-child,th.svelte-1b6hqhz.svelte-1b6hqhz:first-child{text-align:left}td.svelte-1b6hqhz button.svelte-1b6hqhz{font-size:10px}.resolution.svelte-1b6hqhz.svelte-1b6hqhz{margin-top:12px}.observation.svelte-1b6hqhz.svelte-1b6hqhz{background:#21384a;padding:9px;border-radius:8px}.opacity.svelte-1b6hqhz.svelte-1b6hqhz{justify-content:space-between;margin-top:9px}.opacity.svelte-1b6hqhz input.svelte-1b6hqhz{width:130px}footer.svelte-1b6hqhz.svelte-1b6hqhz{border-top:1px solid #42586b;margin-top:12px;padding-top:8px}footer.svelte-1b6hqhz small.svelte-1b6hqhz{font-size:10px;margin-top:6px}.contour-controls.svelte-1b6hqhz.svelte-1b6hqhz{border:1px solid #42586b;border-radius:9px;padding:9px;margin:10px 0}.contour-presets.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;gap:5px;margin:9px 0}.contour-presets.svelte-1b6hqhz button.svelte-1b6hqhz{font-size:10px}.contour-row.svelte-1b6hqhz.svelte-1b6hqhz{border-bottom:1px solid #42586b;padding:8px 0}.contour-check.svelte-1b6hqhz.svelte-1b6hqhz{font-size:11px;gap:6px}.contour-settings.svelte-1b6hqhz.svelte-1b6hqhz{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:6px}.contour-settings.svelte-1b6hqhz label.svelte-1b6hqhz{font-size:10px}.contour-settings.svelte-1b6hqhz select.svelte-1b6hqhz{font-size:10px;padding:4px}.contour-settings.svelte-1b6hqhz input[type=color].svelte-1b6hqhz{width:28px;height:26px;padding:2px;flex-shrink:0}.contour-time.svelte-1b6hqhz.svelte-1b6hqhz{margin:8px 0}.contour-controls.svelte-1b6hqhz>small.svelte-1b6hqhz{margin-top:7px}@media(max-width:600px){.panel.svelte-1b6hqhz.svelte-1b6hqhz{bottom:100px;width:285px;max-height:62dvh;padding:12px}.restore.svelte-1b6hqhz.svelte-1b6hqhz{bottom:100px}.coordinates.svelte-1b6hqhz input.svelte-1b6hqhz{width:65px}}");
 }
 
 function get_each_context_3(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[115] = list[i];
+	child_ctx[125] = list[i];
 	return child_ctx;
 }
 
 function get_each_context(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[106] = list[i];
+	child_ctx[116] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[109] = list[i];
+	child_ctx[119] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_2(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[112] = list[i];
-	child_ctx[114] = i;
+	child_ctx[122] = list[i];
+	child_ctx[124] = i;
 	return child_ctx;
 }
 
 function get_each_context_4(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[118] = list[i];
+	child_ctx[128] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_5(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[118] = list[i];
+	child_ctx[128] = list[i];
 	return child_ctx;
 }
 
-// (450:0) {:else}
+function get_each_context_6(ctx, list, i) {
+	const child_ctx = ctx.slice();
+	child_ctx[133] = list[i];
+	return child_ctx;
+}
+
+function get_each_context_7(ctx, list, i) {
+	const child_ctx = ctx.slice();
+	child_ctx[136] = list[i];
+	child_ctx[137] = list;
+	child_ctx[138] = i;
+	return child_ctx;
+}
+
+function get_each_context_8(ctx, list, i) {
+	const child_ctx = ctx.slice();
+	child_ctx[139] = list[i];
+	return child_ctx;
+}
+
+function get_each_context_9(ctx, list, i) {
+	const child_ctx = ctx.slice();
+	child_ctx[142] = list[i];
+	return child_ctx;
+}
+
+// (466:0) {:else}
 function create_else_block(ctx) {
 	let section;
 	let header;
@@ -1043,98 +1269,135 @@ function create_else_block(ctx) {
 	let input0;
 	let t6;
 	let t7;
-	let label1;
-	let t8;
-	let select;
-	let show_if = ![.../*places*/ ctx[32], .../*saved*/ ctx[22]].some(/*func*/ ctx[54]);
-	let if_block0_anchor;
-	let each0_anchor;
-	let select_disabled_value;
+	let details0;
+	let summary0;
 	let t9;
-	let small1;
-	let t11;
 	let div1;
-	let label2;
-	let t12;
-	let input1;
-	let label3;
-	let t13;
-	let input2;
 	let button3;
-	let t14;
+	let t10;
 	let button3_disabled_value;
+	let button4;
+	let t12;
+	let t13;
+	let label1;
+	let input1;
+	let t14;
 	let t15;
 	let t16;
-	let div2;
-	let small2;
-	let t17_value = /*selected*/ ctx[6].lat.toFixed(3) + "";
 	let t17;
 	let t18;
-	let t19_value = /*selected*/ ctx[6].lon.toFixed(3) + "";
-	let t19;
+	let small1;
 	let t20;
-	let button4;
+	let small2;
+	let t22;
+	let label2;
+	let t23;
+	let select;
+	let show_if = ![.../*places*/ ctx[34], .../*saved*/ ctx[23]].some(/*func*/ ctx[59]);
+	let if_block2_anchor;
+	let each2_anchor;
+	let select_disabled_value;
+	let t24;
+	let small3;
+	let t26;
+	let div2;
+	let label3;
+	let t27;
+	let input2;
+	let label4;
+	let t28;
+	let input3;
+	let button5;
+	let t29;
+	let button5_disabled_value;
+	let t30;
+	let t31;
+	let div3;
+	let small4;
+	let t32_value = /*selected*/ ctx[6].lat.toFixed(3) + "";
+	let t32;
+	let t33;
+	let t34_value = /*selected*/ ctx[6].lon.toFixed(3) + "";
+	let t34;
+	let t35;
+	let button6;
 
-	let t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[65])
+	let t36_value = (/*saved*/ ctx[23].some(/*func_2*/ ctx[75])
 	? 'Unsave'
 	: 'Save place') + "";
 
-	let t21;
-	let button4_disabled_value;
-	let t22;
-	let t23;
-	let details;
-	let summary;
-	let t25;
-	let label4;
-	let t26;
-	let input3;
-	let t27;
+	let t36;
+	let button6_disabled_value;
+	let t37;
+	let t38;
+	let details1;
+	let summary1;
+	let t40;
+	let label5;
+	let t41;
+	let input4;
+	let t42;
 	let p0;
-	let t29;
+	let t44;
 	let p1;
-	let t31;
+	let t46;
 	let p2;
-	let t33;
+	let t48;
 	let footer;
-	let button5;
-	let t34;
-	let button5_disabled_value;
-	let t35;
+	let button7;
+	let t49;
+	let button7_disabled_value;
+	let t50;
 	let mounted;
 	let dispose;
-	let if_block0 = show_if && create_if_block_19(ctx);
-	let each_value_5 = ensure_array_like(/*places*/ ctx[32]);
+	let each_value_7 = ensure_array_like(Object.keys(CONTOUR_FIELDS));
+	let each_blocks_3 = [];
+
+	for (let i = 0; i < each_value_7.length; i += 1) {
+		each_blocks_3[i] = create_each_block_7(get_each_context_7(ctx, each_value_7, i));
+	}
+
+	let if_block0 = /*contourStatus*/ ctx[24].loading && create_if_block_21();
+	let each_value_6 = ensure_array_like(/*contourStatus*/ ctx[24].errors);
+	let each_blocks_2 = [];
+
+	for (let i = 0; i < each_value_6.length; i += 1) {
+		each_blocks_2[i] = create_each_block_6(get_each_context_6(ctx, each_value_6, i));
+	}
+
+	let if_block1 = /*contourStatus*/ ctx[24].validTime && /*contourStatus*/ ctx[24].active.length && create_if_block_20(ctx);
+	let if_block2 = show_if && create_if_block_19(ctx);
+	let each_value_5 = ensure_array_like(/*places*/ ctx[34]);
 	let each_blocks_1 = [];
 
 	for (let i = 0; i < each_value_5.length; i += 1) {
 		each_blocks_1[i] = create_each_block_5(get_each_context_5(ctx, each_value_5, i));
 	}
 
-	let each_value_4 = ensure_array_like(/*saved*/ ctx[22].filter(/*func_1*/ ctx[60]));
+	let each_value_4 = ensure_array_like(/*saved*/ ctx[23].filter(/*func_1*/ ctx[70]));
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value_4.length; i += 1) {
 		each_blocks[i] = create_each_block_4(get_each_context_4(ctx, each_value_4, i));
 	}
 
-	let if_block1 = /*locationError*/ ctx[19] && create_if_block_18(ctx);
+	let if_block3 = /*locationError*/ ctx[20] && create_if_block_18(ctx);
 
-	function select_block_type_1(ctx, dirty) {
+	function select_block_type_2(ctx, dirty) {
 		if (/*view*/ ctx[3] === 'forecast') return create_if_block_2;
 		return create_else_block_3;
 	}
 
-	let current_block_type = select_block_type_1(ctx);
-	let if_block2 = current_block_type(ctx);
-	let if_block3 = /*forecast*/ ctx[0] && create_if_block_1(ctx);
+	let current_block_type = select_block_type_2(ctx);
+	let if_block4 = current_block_type(ctx);
+	let if_block5 = /*forecast*/ ctx[0] && create_if_block_1(ctx);
 
 	return {
 		c() {
 			section = element("section");
 			header = element("header");
 			div0 = element("div");
-			div0.innerHTML = `<strong class="svelte-17wy0sx">Dust forecast</strong><small class="svelte-17wy0sx">NASA GEOS-FP · v1.0.0</small>`;
+			div0.innerHTML = `<strong class="svelte-1b6hqhz">Synoptic Atlas</strong><small class="svelte-1b6hqhz">NASA GEOS-FP · v1.1.0</small>`;
 			button0 = element("button");
 			button0.textContent = "−";
 			t3 = space();
@@ -1147,126 +1410,174 @@ function create_else_block(ctx) {
 			input0 = element("input");
 			t6 = text("On");
 			t7 = space();
+			details0 = element("details");
+			summary0 = element("summary");
+			summary0.textContent = "Weather isolines";
+			t9 = space();
+			div1 = element("div");
+			button3 = element("button");
+			t10 = text("Synoptic preset");
+			button4 = element("button");
+			button4.textContent = "Clear contours";
+			t12 = space();
+
+			for (let i = 0; i < each_blocks_3.length; i += 1) {
+				each_blocks_3[i].c();
+			}
+
+			t13 = space();
 			label1 = element("label");
-			t8 = text("Place");
-			select = element("select");
+			input1 = element("input");
+			t14 = text("Show labels with levels and units");
+			t15 = space();
 			if (if_block0) if_block0.c();
-			if_block0_anchor = empty();
+			t16 = space();
+
+			for (let i = 0; i < each_blocks_2.length; i += 1) {
+				each_blocks_2[i].c();
+			}
+
+			t17 = space();
+			if (if_block1) if_block1.c();
+			t18 = space();
+			small1 = element("small");
+			small1.textContent = "Independent layers, shown together. GEOS-FP on a sampled 1.25-degree contour grid; upper-air values below terrain are masked. Height labels use dam (1 dam = 10 m), temperature uses Celsius, MSLP uses hPa.";
+			t20 = space();
+			small2 = element("small");
+			small2.textContent = "Contours follow the nearest 3-hour snapshot within 90 minutes of Windy's forecast time. Dust is a 3-hour mean; satellite observation time is independent.";
+			t22 = space();
+			label2 = element("label");
+			t23 = text("Place");
+			select = element("select");
+			if (if_block2) if_block2.c();
+			if_block2_anchor = empty();
 
 			for (let i = 0; i < each_blocks_1.length; i += 1) {
 				each_blocks_1[i].c();
 			}
 
-			each0_anchor = empty();
+			each2_anchor = empty();
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				each_blocks[i].c();
 			}
 
-			t9 = space();
-			small1 = element("small");
-			small1.textContent = "Click the map or enter signed coordinates.";
-			t11 = space();
-			div1 = element("div");
-			label2 = element("label");
-			t12 = text("Lat");
-			input1 = element("input");
-			label3 = element("label");
-			t13 = text("Lon");
-			input2 = element("input");
-			button3 = element("button");
-			t14 = text("Go");
-			t15 = space();
-			if (if_block1) if_block1.c();
-			t16 = space();
+			t24 = space();
+			small3 = element("small");
+			small3.textContent = "Click the map or enter signed coordinates.";
+			t26 = space();
 			div2 = element("div");
-			small2 = element("small");
-			t17 = text(t17_value);
-			t18 = text("°, ");
-			t19 = text(t19_value);
-			t20 = text("°");
-			button4 = element("button");
-			t21 = text(t21_value);
-			t22 = space();
-			if_block2.c();
-			t23 = space();
-			details = element("details");
-			summary = element("summary");
-			summary.textContent = "Display and interpretation";
-			t25 = space();
+			label3 = element("label");
+			t27 = text("Lat");
+			input2 = element("input");
 			label4 = element("label");
-			t26 = text("Map opacity");
+			t28 = text("Lon");
 			input3 = element("input");
-			t27 = space();
+			button5 = element("button");
+			t29 = text("Go");
+			t30 = space();
+			if (if_block3) if_block3.c();
+			t31 = space();
+			div3 = element("div");
+			small4 = element("small");
+			t32 = text(t32_value);
+			t33 = text("°, ");
+			t34 = text(t34_value);
+			t35 = text("°");
+			button6 = element("button");
+			t36 = text(t36_value);
+			t37 = space();
+			if_block4.c();
+			t38 = space();
+			details1 = element("details");
+			summary1 = element("summary");
+			summary1.textContent = "Display and interpretation";
+			t40 = space();
+			label5 = element("label");
+			t41 = text("Map opacity");
+			input4 = element("input");
+			t42 = space();
 			p0 = element("p");
 			p0.textContent = "GEOS-FP is a forecast, not a surface observation. Native grid points are retained worldwide; small features between them may be unresolved. Values use compact 16-bit logarithmic packing for delivery, with small quantization differences. Points use the nearest source node.";
-			t29 = space();
+			t44 = space();
 			p1 = element("p");
 			p1.textContent = "Surface dust is modelled mineral dust, not total PM₁₀. Fine dust is only the dust contribution to PM₂.₅. Optical depth describes the full atmospheric column and is not a visibility estimate. Threshold guidance applies to the selected point and forecast period only. There are no background notifications.";
-			t31 = space();
+			t46 = space();
 			p2 = element("p");
 			p2.textContent = "Use surface observations and official warnings for decisions. Forecast accuracy and alert thresholds have not been independently validated.";
-			t33 = space();
+			t48 = space();
 			footer = element("footer");
-			button5 = element("button");
-			t34 = text("Refresh");
-			t35 = space();
-			if (if_block3) if_block3.c();
+			button7 = element("button");
+			t49 = text("Refresh");
+			t50 = space();
+			if (if_block5) if_block5.c();
 			attr(button0, "aria-label", "Minimize panel");
-			attr(button0, "class", "svelte-17wy0sx");
-			attr(header, "class", "svelte-17wy0sx");
-			attr(button1, "class", "svelte-17wy0sx");
+			attr(button0, "class", "svelte-1b6hqhz");
+			attr(header, "class", "svelte-1b6hqhz");
+			attr(button1, "class", "svelte-1b6hqhz");
 			toggle_class(button1, "active", /*view*/ ctx[3] === 'forecast');
-			attr(button2, "class", "svelte-17wy0sx");
+			attr(button2, "class", "svelte-1b6hqhz");
 			toggle_class(button2, "active", /*view*/ ctx[3] === 'satellite');
 			attr(input0, "aria-label", "Enable plugin");
 			attr(input0, "type", "checkbox");
-			attr(input0, "class", "svelte-17wy0sx");
-			attr(label0, "class", "svelte-17wy0sx");
+			attr(input0, "class", "svelte-1b6hqhz");
+			attr(label0, "class", "svelte-1b6hqhz");
 			attr(nav, "aria-label", "Dust view");
-			attr(nav, "class", "svelte-17wy0sx");
+			attr(nav, "class", "svelte-1b6hqhz");
+			attr(summary0, "class", "svelte-1b6hqhz");
+			button3.disabled = button3_disabled_value = !/*enabled*/ ctx[1];
+			attr(button3, "class", "svelte-1b6hqhz");
+			attr(button4, "class", "svelte-1b6hqhz");
+			attr(div1, "class", "contour-presets svelte-1b6hqhz");
+			attr(input1, "aria-label", "Contour labels");
+			attr(input1, "type", "checkbox");
+			attr(input1, "class", "svelte-1b6hqhz");
+			attr(label1, "class", "contour-check svelte-1b6hqhz");
+			attr(small1, "class", "svelte-1b6hqhz");
+			attr(small2, "class", "svelte-1b6hqhz");
+			attr(details0, "class", "contour-controls svelte-1b6hqhz");
 			attr(select, "aria-label", "Location");
 			select.disabled = select_disabled_value = !/*enabled*/ ctx[1];
-			attr(select, "class", "svelte-17wy0sx");
-			if (/*selected*/ ctx[6].name === void 0) add_render_callback(() => /*select_change_handler*/ ctx[61].call(select));
-			attr(label1, "class", "place svelte-17wy0sx");
-			attr(small1, "class", "svelte-17wy0sx");
-			attr(input1, "aria-label", "Latitude");
-			attr(input1, "type", "number");
-			attr(input1, "min", "-90");
-			attr(input1, "max", "90");
-			attr(input1, "step", "any");
-			attr(input1, "class", "svelte-17wy0sx");
-			attr(label2, "class", "svelte-17wy0sx");
-			attr(input2, "aria-label", "Longitude");
+			attr(select, "class", "svelte-1b6hqhz");
+			if (/*selected*/ ctx[6].name === void 0) add_render_callback(() => /*select_change_handler_2*/ ctx[71].call(select));
+			attr(label2, "class", "place svelte-1b6hqhz");
+			attr(small3, "class", "svelte-1b6hqhz");
+			attr(input2, "aria-label", "Latitude");
 			attr(input2, "type", "number");
+			attr(input2, "min", "-90");
+			attr(input2, "max", "90");
 			attr(input2, "step", "any");
-			attr(input2, "class", "svelte-17wy0sx");
-			attr(label3, "class", "svelte-17wy0sx");
-			button3.disabled = button3_disabled_value = !/*enabled*/ ctx[1];
-			attr(button3, "class", "svelte-17wy0sx");
-			attr(div1, "class", "coordinates svelte-17wy0sx");
-			attr(small2, "class", "svelte-17wy0sx");
-			button4.disabled = button4_disabled_value = !/*enabled*/ ctx[1];
-			attr(button4, "class", "svelte-17wy0sx");
-			attr(div2, "class", "point-name svelte-17wy0sx");
-			attr(summary, "class", "svelte-17wy0sx");
-			attr(input3, "aria-label", "Map opacity");
-			attr(input3, "type", "range");
-			attr(input3, "min", ".15");
-			attr(input3, "max", "1");
-			attr(input3, "step", ".05");
-			attr(input3, "class", "svelte-17wy0sx");
-			attr(label4, "class", "opacity svelte-17wy0sx");
-			attr(p0, "class", "svelte-17wy0sx");
-			attr(p1, "class", "svelte-17wy0sx");
-			attr(p2, "class", "svelte-17wy0sx");
-			attr(details, "class", "svelte-17wy0sx");
-			button5.disabled = button5_disabled_value = !/*enabled*/ ctx[1] || /*loading*/ ctx[15] || /*satMetaLoading*/ ctx[28] || /*satLoading*/ ctx[27];
-			attr(button5, "class", "svelte-17wy0sx");
-			attr(footer, "class", "svelte-17wy0sx");
-			attr(section, "class", "panel svelte-17wy0sx");
-			attr(section, "aria-label", "Dust forecast");
+			attr(input2, "class", "svelte-1b6hqhz");
+			attr(label3, "class", "svelte-1b6hqhz");
+			attr(input3, "aria-label", "Longitude");
+			attr(input3, "type", "number");
+			attr(input3, "step", "any");
+			attr(input3, "class", "svelte-1b6hqhz");
+			attr(label4, "class", "svelte-1b6hqhz");
+			button5.disabled = button5_disabled_value = !/*enabled*/ ctx[1];
+			attr(button5, "class", "svelte-1b6hqhz");
+			attr(div2, "class", "coordinates svelte-1b6hqhz");
+			attr(small4, "class", "svelte-1b6hqhz");
+			button6.disabled = button6_disabled_value = !/*enabled*/ ctx[1];
+			attr(button6, "class", "svelte-1b6hqhz");
+			attr(div3, "class", "point-name svelte-1b6hqhz");
+			attr(summary1, "class", "svelte-1b6hqhz");
+			attr(input4, "aria-label", "Map opacity");
+			attr(input4, "type", "range");
+			attr(input4, "min", ".15");
+			attr(input4, "max", "1");
+			attr(input4, "step", ".05");
+			attr(input4, "class", "svelte-1b6hqhz");
+			attr(label5, "class", "opacity svelte-1b6hqhz");
+			attr(p0, "class", "svelte-1b6hqhz");
+			attr(p1, "class", "svelte-1b6hqhz");
+			attr(p2, "class", "svelte-1b6hqhz");
+			attr(details1, "class", "svelte-1b6hqhz");
+			button7.disabled = button7_disabled_value = !/*enabled*/ ctx[1] || /*loading*/ ctx[16] || /*satMetaLoading*/ ctx[30] || /*satLoading*/ ctx[29];
+			attr(button7, "class", "svelte-1b6hqhz");
+			attr(footer, "class", "svelte-1b6hqhz");
+			attr(section, "class", "panel svelte-1b6hqhz");
+			attr(section, "aria-label", "Synoptic Atlas");
 		},
 		m(target, anchor) {
 			insert(target, section, anchor);
@@ -1282,11 +1593,48 @@ function create_else_block(ctx) {
 			input0.checked = /*enabled*/ ctx[1];
 			append(label0, t6);
 			append(section, t7);
-			append(section, label1);
-			append(label1, t8);
-			append(label1, select);
-			if (if_block0) if_block0.m(select, null);
-			append(select, if_block0_anchor);
+			append(section, details0);
+			append(details0, summary0);
+			append(details0, t9);
+			append(details0, div1);
+			append(div1, button3);
+			append(button3, t10);
+			append(div1, button4);
+			append(details0, t12);
+
+			for (let i = 0; i < each_blocks_3.length; i += 1) {
+				if (each_blocks_3[i]) {
+					each_blocks_3[i].m(details0, null);
+				}
+			}
+
+			append(details0, t13);
+			append(details0, label1);
+			append(label1, input1);
+			input1.checked = /*contourOptions*/ ctx[8].labels;
+			append(label1, t14);
+			append(details0, t15);
+			if (if_block0) if_block0.m(details0, null);
+			append(details0, t16);
+
+			for (let i = 0; i < each_blocks_2.length; i += 1) {
+				if (each_blocks_2[i]) {
+					each_blocks_2[i].m(details0, null);
+				}
+			}
+
+			append(details0, t17);
+			if (if_block1) if_block1.m(details0, null);
+			append(details0, t18);
+			append(details0, small1);
+			append(details0, t20);
+			append(details0, small2);
+			append(section, t22);
+			append(section, label2);
+			append(label2, t23);
+			append(label2, select);
+			if (if_block2) if_block2.m(select, null);
+			append(select, if_block2_anchor);
 
 			for (let i = 0; i < each_blocks_1.length; i += 1) {
 				if (each_blocks_1[i]) {
@@ -1294,7 +1642,7 @@ function create_else_block(ctx) {
 				}
 			}
 
-			append(select, each0_anchor);
+			append(select, each2_anchor);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				if (each_blocks[i]) {
@@ -1303,71 +1651,75 @@ function create_else_block(ctx) {
 			}
 
 			select_option(select, /*selected*/ ctx[6].name, true);
-			append(section, t9);
-			append(section, small1);
-			append(section, t11);
-			append(section, div1);
-			append(div1, label2);
-			append(label2, t12);
-			append(label2, input1);
-			set_input_value(input1, /*inputLat*/ ctx[20]);
-			append(div1, label3);
-			append(label3, t13);
-			append(label3, input2);
-			set_input_value(input2, /*inputLon*/ ctx[21]);
-			append(div1, button3);
-			append(button3, t14);
-			append(section, t15);
-			if (if_block1) if_block1.m(section, null);
-			append(section, t16);
+			append(section, t24);
+			append(section, small3);
+			append(section, t26);
 			append(section, div2);
-			append(div2, small2);
-			append(small2, t17);
-			append(small2, t18);
-			append(small2, t19);
-			append(small2, t20);
-			append(div2, button4);
-			append(button4, t21);
-			append(section, t22);
-			if_block2.m(section, null);
-			append(section, t23);
-			append(section, details);
-			append(details, summary);
-			append(details, t25);
-			append(details, label4);
-			append(label4, t26);
+			append(div2, label3);
+			append(label3, t27);
+			append(label3, input2);
+			set_input_value(input2, /*inputLat*/ ctx[21]);
+			append(div2, label4);
+			append(label4, t28);
 			append(label4, input3);
-			set_input_value(input3, /*opacity*/ ctx[5]);
-			append(details, t27);
-			append(details, p0);
-			append(details, t29);
-			append(details, p1);
-			append(details, t31);
-			append(details, p2);
-			append(section, t33);
+			set_input_value(input3, /*inputLon*/ ctx[22]);
+			append(div2, button5);
+			append(button5, t29);
+			append(section, t30);
+			if (if_block3) if_block3.m(section, null);
+			append(section, t31);
+			append(section, div3);
+			append(div3, small4);
+			append(small4, t32);
+			append(small4, t33);
+			append(small4, t34);
+			append(small4, t35);
+			append(div3, button6);
+			append(button6, t36);
+			append(section, t37);
+			if_block4.m(section, null);
+			append(section, t38);
+			append(section, details1);
+			append(details1, summary1);
+			append(details1, t40);
+			append(details1, label5);
+			append(label5, t41);
+			append(label5, input4);
+			set_input_value(input4, /*opacity*/ ctx[5]);
+			append(details1, t42);
+			append(details1, p0);
+			append(details1, t44);
+			append(details1, p1);
+			append(details1, t46);
+			append(details1, p2);
+			append(section, t48);
 			append(section, footer);
-			append(footer, button5);
-			append(button5, t34);
-			append(footer, t35);
-			if (if_block3) if_block3.m(footer, null);
+			append(footer, button7);
+			append(button7, t49);
+			append(footer, t50);
+			if (if_block5) if_block5.m(footer, null);
 
 			if (!mounted) {
 				dispose = [
-					listen(button0, "click", /*click_handler_1*/ ctx[56]),
-					listen(button1, "click", /*click_handler_2*/ ctx[57]),
-					listen(button2, "click", /*click_handler_3*/ ctx[58]),
-					listen(input0, "change", /*input0_change_handler*/ ctx[59]),
-					listen(input0, "change", /*toggleEnabled*/ ctx[46]),
-					listen(select, "change", /*select_change_handler*/ ctx[61]),
-					listen(select, "change", /*change_handler*/ ctx[62]),
-					listen(input1, "input", /*input1_input_handler*/ ctx[63]),
-					listen(input2, "input", /*input2_input_handler*/ ctx[64]),
-					listen(button3, "click", /*goToCoordinates*/ ctx[39]),
-					listen(button4, "click", /*savePlace*/ ctx[36]),
-					listen(input3, "change", /*input3_change_input_handler*/ ctx[75]),
-					listen(input3, "input", /*input3_change_input_handler*/ ctx[75]),
-					listen(input3, "change", /*savePreferences*/ ctx[35]),
-					listen(button5, "click", /*click_handler_7*/ ctx[76])
+					listen(button0, "click", /*click_handler_1*/ ctx[61]),
+					listen(button1, "click", /*click_handler_2*/ ctx[62]),
+					listen(button2, "click", /*click_handler_3*/ ctx[63]),
+					listen(input0, "change", /*input0_change_handler*/ ctx[64]),
+					listen(input0, "change", /*toggleEnabled*/ ctx[49]),
+					listen(button3, "click", /*synopticPreset*/ ctx[39]),
+					listen(button4, "click", /*clearContours*/ ctx[40]),
+					listen(input1, "change", /*input1_change_handler*/ ctx[69]),
+					listen(input1, "change", /*savePreferences*/ ctx[37]),
+					listen(select, "change", /*select_change_handler_2*/ ctx[71]),
+					listen(select, "change", /*change_handler*/ ctx[72]),
+					listen(input2, "input", /*input2_input_handler*/ ctx[73]),
+					listen(input3, "input", /*input3_input_handler*/ ctx[74]),
+					listen(button5, "click", /*goToCoordinates*/ ctx[44]),
+					listen(button6, "click", /*savePlace*/ ctx[38]),
+					listen(input4, "change", /*input4_change_input_handler*/ ctx[85]),
+					listen(input4, "input", /*input4_change_input_handler*/ ctx[85]),
+					listen(input4, "change", /*savePreferences*/ ctx[37]),
+					listen(button7, "click", /*refreshAll*/ ctx[41])
 				];
 
 				mounted = true;
@@ -1386,23 +1738,101 @@ function create_else_block(ctx) {
 				input0.checked = /*enabled*/ ctx[1];
 			}
 
-			if (dirty[0] & /*saved, selected*/ 4194368) show_if = ![.../*places*/ ctx[32], .../*saved*/ ctx[22]].some(/*func*/ ctx[54]);
+			if (dirty[0] & /*enabled*/ 2 && button3_disabled_value !== (button3_disabled_value = !/*enabled*/ ctx[1])) {
+				button3.disabled = button3_disabled_value;
+			}
 
-			if (show_if) {
-				if (if_block0) {
-					if_block0.p(ctx, dirty);
-				} else {
-					if_block0 = create_if_block_19(ctx);
+			if (dirty[0] & /*enabled, contourOptions*/ 258 | dirty[1] & /*savePreferences*/ 64) {
+				each_value_7 = ensure_array_like(Object.keys(CONTOUR_FIELDS));
+				let i;
+
+				for (i = 0; i < each_value_7.length; i += 1) {
+					const child_ctx = get_each_context_7(ctx, each_value_7, i);
+
+					if (each_blocks_3[i]) {
+						each_blocks_3[i].p(child_ctx, dirty);
+					} else {
+						each_blocks_3[i] = create_each_block_7(child_ctx);
+						each_blocks_3[i].c();
+						each_blocks_3[i].m(details0, t13);
+					}
+				}
+
+				for (; i < each_blocks_3.length; i += 1) {
+					each_blocks_3[i].d(1);
+				}
+
+				each_blocks_3.length = each_value_7.length;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256) {
+				input1.checked = /*contourOptions*/ ctx[8].labels;
+			}
+
+			if (/*contourStatus*/ ctx[24].loading) {
+				if (if_block0) ; else {
+					if_block0 = create_if_block_21();
 					if_block0.c();
-					if_block0.m(select, if_block0_anchor);
+					if_block0.m(details0, t16);
 				}
 			} else if (if_block0) {
 				if_block0.d(1);
 				if_block0 = null;
 			}
 
-			if (dirty[1] & /*places*/ 2) {
-				each_value_5 = ensure_array_like(/*places*/ ctx[32]);
+			if (dirty[0] & /*contourStatus*/ 16777216) {
+				each_value_6 = ensure_array_like(/*contourStatus*/ ctx[24].errors);
+				let i;
+
+				for (i = 0; i < each_value_6.length; i += 1) {
+					const child_ctx = get_each_context_6(ctx, each_value_6, i);
+
+					if (each_blocks_2[i]) {
+						each_blocks_2[i].p(child_ctx, dirty);
+					} else {
+						each_blocks_2[i] = create_each_block_6(child_ctx);
+						each_blocks_2[i].c();
+						each_blocks_2[i].m(details0, t17);
+					}
+				}
+
+				for (; i < each_blocks_2.length; i += 1) {
+					each_blocks_2[i].d(1);
+				}
+
+				each_blocks_2.length = each_value_6.length;
+			}
+
+			if (/*contourStatus*/ ctx[24].validTime && /*contourStatus*/ ctx[24].active.length) {
+				if (if_block1) {
+					if_block1.p(ctx, dirty);
+				} else {
+					if_block1 = create_if_block_20(ctx);
+					if_block1.c();
+					if_block1.m(details0, t18);
+				}
+			} else if (if_block1) {
+				if_block1.d(1);
+				if_block1 = null;
+			}
+
+			if (dirty[0] & /*saved, selected*/ 8388672) show_if = ![.../*places*/ ctx[34], .../*saved*/ ctx[23]].some(/*func*/ ctx[59]);
+
+			if (show_if) {
+				if (if_block2) {
+					if_block2.p(ctx, dirty);
+				} else {
+					if_block2 = create_if_block_19(ctx);
+					if_block2.c();
+					if_block2.m(select, if_block2_anchor);
+				}
+			} else if (if_block2) {
+				if_block2.d(1);
+				if_block2 = null;
+			}
+
+			if (dirty[1] & /*places*/ 8) {
+				each_value_5 = ensure_array_like(/*places*/ ctx[34]);
 				let i;
 
 				for (i = 0; i < each_value_5.length; i += 1) {
@@ -1413,7 +1843,7 @@ function create_else_block(ctx) {
 					} else {
 						each_blocks_1[i] = create_each_block_5(child_ctx);
 						each_blocks_1[i].c();
-						each_blocks_1[i].m(select, each0_anchor);
+						each_blocks_1[i].m(select, each2_anchor);
 					}
 				}
 
@@ -1424,8 +1854,8 @@ function create_else_block(ctx) {
 				each_blocks_1.length = each_value_5.length;
 			}
 
-			if (dirty[0] & /*saved*/ 4194304 | dirty[1] & /*places*/ 2) {
-				each_value_4 = ensure_array_like(/*saved*/ ctx[22].filter(/*func_1*/ ctx[60]));
+			if (dirty[0] & /*saved*/ 8388608 | dirty[1] & /*places*/ 8) {
+				each_value_4 = ensure_array_like(/*saved*/ ctx[23].filter(/*func_1*/ ctx[70]));
 				let i;
 
 				for (i = 0; i < each_value_4.length; i += 1) {
@@ -1451,77 +1881,77 @@ function create_else_block(ctx) {
 				select.disabled = select_disabled_value;
 			}
 
-			if (dirty[0] & /*selected, saved*/ 4194368 | dirty[1] & /*places*/ 2) {
+			if (dirty[0] & /*selected, saved*/ 8388672 | dirty[1] & /*places*/ 8) {
 				select_option(select, /*selected*/ ctx[6].name);
 			}
 
-			if (dirty[0] & /*inputLat*/ 1048576 && to_number(input1.value) !== /*inputLat*/ ctx[20]) {
-				set_input_value(input1, /*inputLat*/ ctx[20]);
+			if (dirty[0] & /*inputLat*/ 2097152 && to_number(input2.value) !== /*inputLat*/ ctx[21]) {
+				set_input_value(input2, /*inputLat*/ ctx[21]);
 			}
 
-			if (dirty[0] & /*inputLon*/ 2097152 && to_number(input2.value) !== /*inputLon*/ ctx[21]) {
-				set_input_value(input2, /*inputLon*/ ctx[21]);
+			if (dirty[0] & /*inputLon*/ 4194304 && to_number(input3.value) !== /*inputLon*/ ctx[22]) {
+				set_input_value(input3, /*inputLon*/ ctx[22]);
 			}
 
-			if (dirty[0] & /*enabled*/ 2 && button3_disabled_value !== (button3_disabled_value = !/*enabled*/ ctx[1])) {
-				button3.disabled = button3_disabled_value;
-			}
-
-			if (/*locationError*/ ctx[19]) {
-				if (if_block1) {
-					if_block1.p(ctx, dirty);
-				} else {
-					if_block1 = create_if_block_18(ctx);
-					if_block1.c();
-					if_block1.m(section, t16);
-				}
-			} else if (if_block1) {
-				if_block1.d(1);
-				if_block1 = null;
-			}
-
-			if (dirty[0] & /*selected*/ 64 && t17_value !== (t17_value = /*selected*/ ctx[6].lat.toFixed(3) + "")) set_data(t17, t17_value);
-			if (dirty[0] & /*selected*/ 64 && t19_value !== (t19_value = /*selected*/ ctx[6].lon.toFixed(3) + "")) set_data(t19, t19_value);
-
-			if (dirty[0] & /*saved, selected*/ 4194368 && t21_value !== (t21_value = (/*saved*/ ctx[22].some(/*func_2*/ ctx[65])
-			? 'Unsave'
-			: 'Save place') + "")) set_data(t21, t21_value);
-
-			if (dirty[0] & /*enabled*/ 2 && button4_disabled_value !== (button4_disabled_value = !/*enabled*/ ctx[1])) {
-				button4.disabled = button4_disabled_value;
-			}
-
-			if (current_block_type === (current_block_type = select_block_type_1(ctx)) && if_block2) {
-				if_block2.p(ctx, dirty);
-			} else {
-				if_block2.d(1);
-				if_block2 = current_block_type(ctx);
-
-				if (if_block2) {
-					if_block2.c();
-					if_block2.m(section, t23);
-				}
-			}
-
-			if (dirty[0] & /*opacity*/ 32) {
-				set_input_value(input3, /*opacity*/ ctx[5]);
-			}
-
-			if (dirty[0] & /*enabled, loading, satMetaLoading, satLoading*/ 402685954 && button5_disabled_value !== (button5_disabled_value = !/*enabled*/ ctx[1] || /*loading*/ ctx[15] || /*satMetaLoading*/ ctx[28] || /*satLoading*/ ctx[27])) {
+			if (dirty[0] & /*enabled*/ 2 && button5_disabled_value !== (button5_disabled_value = !/*enabled*/ ctx[1])) {
 				button5.disabled = button5_disabled_value;
 			}
 
-			if (/*forecast*/ ctx[0]) {
+			if (/*locationError*/ ctx[20]) {
 				if (if_block3) {
 					if_block3.p(ctx, dirty);
 				} else {
-					if_block3 = create_if_block_1(ctx);
+					if_block3 = create_if_block_18(ctx);
 					if_block3.c();
-					if_block3.m(footer, null);
+					if_block3.m(section, t31);
 				}
 			} else if (if_block3) {
 				if_block3.d(1);
 				if_block3 = null;
+			}
+
+			if (dirty[0] & /*selected*/ 64 && t32_value !== (t32_value = /*selected*/ ctx[6].lat.toFixed(3) + "")) set_data(t32, t32_value);
+			if (dirty[0] & /*selected*/ 64 && t34_value !== (t34_value = /*selected*/ ctx[6].lon.toFixed(3) + "")) set_data(t34, t34_value);
+
+			if (dirty[0] & /*saved, selected*/ 8388672 && t36_value !== (t36_value = (/*saved*/ ctx[23].some(/*func_2*/ ctx[75])
+			? 'Unsave'
+			: 'Save place') + "")) set_data(t36, t36_value);
+
+			if (dirty[0] & /*enabled*/ 2 && button6_disabled_value !== (button6_disabled_value = !/*enabled*/ ctx[1])) {
+				button6.disabled = button6_disabled_value;
+			}
+
+			if (current_block_type === (current_block_type = select_block_type_2(ctx)) && if_block4) {
+				if_block4.p(ctx, dirty);
+			} else {
+				if_block4.d(1);
+				if_block4 = current_block_type(ctx);
+
+				if (if_block4) {
+					if_block4.c();
+					if_block4.m(section, t38);
+				}
+			}
+
+			if (dirty[0] & /*opacity*/ 32) {
+				set_input_value(input4, /*opacity*/ ctx[5]);
+			}
+
+			if (dirty[0] & /*enabled, loading, satMetaLoading, satLoading*/ 1610678274 && button7_disabled_value !== (button7_disabled_value = !/*enabled*/ ctx[1] || /*loading*/ ctx[16] || /*satMetaLoading*/ ctx[30] || /*satLoading*/ ctx[29])) {
+				button7.disabled = button7_disabled_value;
+			}
+
+			if (/*forecast*/ ctx[0]) {
+				if (if_block5) {
+					if_block5.p(ctx, dirty);
+				} else {
+					if_block5 = create_if_block_1(ctx);
+					if_block5.c();
+					if_block5.m(footer, null);
+				}
+			} else if (if_block5) {
+				if_block5.d(1);
+				if_block5 = null;
 			}
 		},
 		d(detaching) {
@@ -1529,19 +1959,23 @@ function create_else_block(ctx) {
 				detach(section);
 			}
 
+			destroy_each(each_blocks_3, detaching);
 			if (if_block0) if_block0.d();
+			destroy_each(each_blocks_2, detaching);
+			if (if_block1) if_block1.d();
+			if (if_block2) if_block2.d();
 			destroy_each(each_blocks_1, detaching);
 			destroy_each(each_blocks, detaching);
-			if (if_block1) if_block1.d();
-			if_block2.d();
 			if (if_block3) if_block3.d();
+			if_block4.d();
+			if (if_block5) if_block5.d();
 			mounted = false;
 			run_all(dispose);
 		}
 	};
 }
 
-// (448:0) {#if hidden}
+// (464:0) {#if hidden}
 function create_if_block(ctx) {
 	let button;
 	let mounted;
@@ -1550,14 +1984,14 @@ function create_if_block(ctx) {
 	return {
 		c() {
 			button = element("button");
-			button.textContent = "🌫 Dust forecast";
-			attr(button, "class", "restore svelte-17wy0sx");
+			button.textContent = "🌫 Synoptic Atlas";
+			attr(button, "class", "restore svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*click_handler*/ ctx[55]);
+				dispose = listen(button, "click", /*click_handler*/ ctx[60]);
 				mounted = true;
 			}
 		},
@@ -1573,7 +2007,456 @@ function create_if_block(ctx) {
 	};
 }
 
-// (455:6) {#if ![...places, ...saved].some(p => p.name === selected.name)}
+// (478:21) {:else}
+function create_else_block_4(ctx) {
+	let small;
+
+	return {
+		c() {
+			small = element("small");
+			small.textContent = "Mean sea level";
+			attr(small, "class", "svelte-1b6hqhz");
+		},
+		m(target, anchor) {
+			insert(target, small, anchor);
+		},
+		p: noop,
+		d(detaching) {
+			if (detaching) {
+				detach(small);
+			}
+		}
+	};
+}
+
+// (476:12) {#if key !== 'mslp'}
+function create_if_block_22(ctx) {
+	let select;
+	let select_disabled_value;
+	let mounted;
+	let dispose;
+	let each_value_9 = ensure_array_like(PRESSURE_LEVELS);
+	let each_blocks = [];
+
+	for (let i = 0; i < each_value_9.length; i += 1) {
+		each_blocks[i] = create_each_block_9(get_each_context_9(ctx, each_value_9, i));
+	}
+
+	function select_change_handler() {
+		/*select_change_handler*/ ctx[66].call(select, /*key*/ ctx[136]);
+	}
+
+	return {
+		c() {
+			select = element("select");
+
+			for (let i = 0; i < each_blocks.length; i += 1) {
+				each_blocks[i].c();
+			}
+
+			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[136]].label + ' pressure level');
+			select.disabled = select_disabled_value = !/*enabled*/ ctx[1];
+			attr(select, "class", "svelte-1b6hqhz");
+			if (/*contourOptions*/ ctx[8][/*key*/ ctx[136]].level === void 0) add_render_callback(select_change_handler);
+		},
+		m(target, anchor) {
+			insert(target, select, anchor);
+
+			for (let i = 0; i < each_blocks.length; i += 1) {
+				if (each_blocks[i]) {
+					each_blocks[i].m(select, null);
+				}
+			}
+
+			select_option(select, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].level, true);
+
+			if (!mounted) {
+				dispose = [
+					listen(select, "change", select_change_handler),
+					listen(select, "change", /*savePreferences*/ ctx[37])
+				];
+
+				mounted = true;
+			}
+		},
+		p(new_ctx, dirty) {
+			ctx = new_ctx;
+
+			if (dirty[0] & /*enabled*/ 2 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[1])) {
+				select.disabled = select_disabled_value;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256) {
+				select_option(select, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].level);
+			}
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(select);
+			}
+
+			destroy_each(each_blocks, detaching);
+			mounted = false;
+			run_all(dispose);
+		}
+	};
+}
+
+// (477:14) {#each PRESSURE_LEVELS as level}
+function create_each_block_9(ctx) {
+	let option;
+
+	return {
+		c() {
+			option = element("option");
+			option.textContent = `${/*level*/ ctx[142]} hPa`;
+			option.__value = /*level*/ ctx[142];
+			set_input_value(option, option.__value);
+		},
+		m(target, anchor) {
+			insert(target, option, anchor);
+		},
+		p: noop,
+		d(detaching) {
+			if (detaching) {
+				detach(option);
+			}
+		}
+	};
+}
+
+// (479:178) {#each CONTOUR_FIELDS[key].steps as step}
+function create_each_block_8(ctx) {
+	let option;
+	let t0_value = /*step*/ ctx[139] + "";
+	let t0;
+	let t1;
+
+	let t2_value = (/*key*/ ctx[136] === 'temp'
+	? 'C'
+	: CONTOUR_FIELDS[/*key*/ ctx[136]].units) + "";
+
+	let t2;
+
+	return {
+		c() {
+			option = element("option");
+			t0 = text(t0_value);
+			t1 = space();
+			t2 = text(t2_value);
+			option.__value = /*step*/ ctx[139];
+			set_input_value(option, option.__value);
+		},
+		m(target, anchor) {
+			insert(target, option, anchor);
+			append(option, t0);
+			append(option, t1);
+			append(option, t2);
+		},
+		p: noop,
+		d(detaching) {
+			if (detaching) {
+				detach(option);
+			}
+		}
+	};
+}
+
+// (472:6) {#each Object.keys(CONTOUR_FIELDS) as key}
+function create_each_block_7(ctx) {
+	let div1;
+	let label0;
+	let input0;
+	let input0_disabled_value;
+	let span;
+	let t0_value = CONTOUR_FIELDS[/*key*/ ctx[136]].label + "";
+	let t0;
+	let span_style_value;
+	let t1;
+	let div0;
+	let t2;
+	let label1;
+	let t3;
+	let select;
+	let select_disabled_value;
+	let t4;
+	let input1;
+	let input1_disabled_value;
+	let mounted;
+	let dispose;
+
+	function input0_change_handler_1() {
+		/*input0_change_handler_1*/ ctx[65].call(input0, /*key*/ ctx[136]);
+	}
+
+	function select_block_type_1(ctx, dirty) {
+		if (/*key*/ ctx[136] !== 'mslp') return create_if_block_22;
+		return create_else_block_4;
+	}
+
+	let current_block_type = select_block_type_1(ctx);
+	let if_block = current_block_type(ctx);
+	let each_value_8 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[136]].steps);
+	let each_blocks = [];
+
+	for (let i = 0; i < each_value_8.length; i += 1) {
+		each_blocks[i] = create_each_block_8(get_each_context_8(ctx, each_value_8, i));
+	}
+
+	function select_change_handler_1() {
+		/*select_change_handler_1*/ ctx[67].call(select, /*key*/ ctx[136]);
+	}
+
+	function input1_input_handler() {
+		/*input1_input_handler*/ ctx[68].call(input1, /*key*/ ctx[136]);
+	}
+
+	return {
+		c() {
+			div1 = element("div");
+			label0 = element("label");
+			input0 = element("input");
+			span = element("span");
+			t0 = text(t0_value);
+			t1 = space();
+			div0 = element("div");
+			if_block.c();
+			t2 = space();
+			label1 = element("label");
+			t3 = text("Every");
+			select = element("select");
+
+			for (let i = 0; i < each_blocks.length; i += 1) {
+				each_blocks[i].c();
+			}
+
+			t4 = space();
+			input1 = element("input");
+			attr(input0, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[136]].label + ' isolines');
+			attr(input0, "type", "checkbox");
+			input0.disabled = input0_disabled_value = !/*enabled*/ ctx[1];
+			attr(input0, "class", "svelte-1b6hqhz");
+			attr(span, "style", span_style_value = 'color:' + /*contourOptions*/ ctx[8][/*key*/ ctx[136]].color);
+			attr(label0, "class", "contour-check svelte-1b6hqhz");
+			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[136]].label + ' contour spacing');
+			select.disabled = select_disabled_value = !/*enabled*/ ctx[1];
+			attr(select, "class", "svelte-1b6hqhz");
+			if (/*contourOptions*/ ctx[8][/*key*/ ctx[136]].step === void 0) add_render_callback(select_change_handler_1);
+			attr(label1, "class", "svelte-1b6hqhz");
+			attr(input1, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[136]].label + ' contour color');
+			attr(input1, "type", "color");
+			input1.disabled = input1_disabled_value = !/*enabled*/ ctx[1];
+			attr(input1, "class", "svelte-1b6hqhz");
+			attr(div0, "class", "contour-settings svelte-1b6hqhz");
+			attr(div1, "class", "contour-row svelte-1b6hqhz");
+		},
+		m(target, anchor) {
+			insert(target, div1, anchor);
+			append(div1, label0);
+			append(label0, input0);
+			input0.checked = /*contourOptions*/ ctx[8][/*key*/ ctx[136]].on;
+			append(label0, span);
+			append(span, t0);
+			append(div1, t1);
+			append(div1, div0);
+			if_block.m(div0, null);
+			append(div0, t2);
+			append(div0, label1);
+			append(label1, t3);
+			append(label1, select);
+
+			for (let i = 0; i < each_blocks.length; i += 1) {
+				if (each_blocks[i]) {
+					each_blocks[i].m(select, null);
+				}
+			}
+
+			select_option(select, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].step, true);
+			append(div0, t4);
+			append(div0, input1);
+			set_input_value(input1, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].color);
+
+			if (!mounted) {
+				dispose = [
+					listen(input0, "change", input0_change_handler_1),
+					listen(input0, "change", /*savePreferences*/ ctx[37]),
+					listen(select, "change", select_change_handler_1),
+					listen(select, "change", /*savePreferences*/ ctx[37]),
+					listen(input1, "input", input1_input_handler),
+					listen(input1, "change", /*savePreferences*/ ctx[37])
+				];
+
+				mounted = true;
+			}
+		},
+		p(new_ctx, dirty) {
+			ctx = new_ctx;
+
+			if (dirty[0] & /*enabled*/ 2 && input0_disabled_value !== (input0_disabled_value = !/*enabled*/ ctx[1])) {
+				input0.disabled = input0_disabled_value;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256) {
+				input0.checked = /*contourOptions*/ ctx[8][/*key*/ ctx[136]].on;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256 && span_style_value !== (span_style_value = 'color:' + /*contourOptions*/ ctx[8][/*key*/ ctx[136]].color)) {
+				attr(span, "style", span_style_value);
+			}
+
+			if_block.p(ctx, dirty);
+
+			if (dirty & /*Object*/ 0) {
+				each_value_8 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[136]].steps);
+				let i;
+
+				for (i = 0; i < each_value_8.length; i += 1) {
+					const child_ctx = get_each_context_8(ctx, each_value_8, i);
+
+					if (each_blocks[i]) {
+						each_blocks[i].p(child_ctx, dirty);
+					} else {
+						each_blocks[i] = create_each_block_8(child_ctx);
+						each_blocks[i].c();
+						each_blocks[i].m(select, null);
+					}
+				}
+
+				for (; i < each_blocks.length; i += 1) {
+					each_blocks[i].d(1);
+				}
+
+				each_blocks.length = each_value_8.length;
+			}
+
+			if (dirty[0] & /*enabled*/ 2 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[1])) {
+				select.disabled = select_disabled_value;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256) {
+				select_option(select, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].step);
+			}
+
+			if (dirty[0] & /*enabled*/ 2 && input1_disabled_value !== (input1_disabled_value = !/*enabled*/ ctx[1])) {
+				input1.disabled = input1_disabled_value;
+			}
+
+			if (dirty[0] & /*contourOptions*/ 256) {
+				set_input_value(input1, /*contourOptions*/ ctx[8][/*key*/ ctx[136]].color);
+			}
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(div1);
+			}
+
+			if_block.d();
+			destroy_each(each_blocks, detaching);
+			mounted = false;
+			run_all(dispose);
+		}
+	};
+}
+
+// (485:6) {#if contourStatus.loading}
+function create_if_block_21(ctx) {
+	let p_1;
+
+	return {
+		c() {
+			p_1 = element("p");
+			p_1.textContent = "Loading GEOS weather isolines.";
+			attr(p_1, "class", "loading svelte-1b6hqhz");
+			attr(p_1, "role", "status");
+		},
+		m(target, anchor) {
+			insert(target, p_1, anchor);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(p_1);
+			}
+		}
+	};
+}
+
+// (486:6) {#each contourStatus.errors as message}
+function create_each_block_6(ctx) {
+	let p_1;
+	let t_value = /*message*/ ctx[133] + "";
+	let t;
+
+	return {
+		c() {
+			p_1 = element("p");
+			t = text(t_value);
+			attr(p_1, "class", "error svelte-1b6hqhz");
+			attr(p_1, "role", "alert");
+		},
+		m(target, anchor) {
+			insert(target, p_1, anchor);
+			append(p_1, t);
+		},
+		p(ctx, dirty) {
+			if (dirty[0] & /*contourStatus*/ 16777216 && t_value !== (t_value = /*message*/ ctx[133] + "")) set_data(t, t_value);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(p_1);
+			}
+		}
+	};
+}
+
+// (487:6) {#if contourStatus.validTime && contourStatus.active.length}
+function create_if_block_20(ctx) {
+	let small;
+	let t0;
+	let t1_value = /*displayTime*/ ctx[35](/*contourStatus*/ ctx[24].validTime) + "";
+	let t1;
+	let t2;
+	let br;
+	let t3;
+	let t4_value = new Date(/*contourStatus*/ ctx[24].runTime).toISOString().slice(0, 16).replace('T', ' ') + "";
+	let t4;
+	let t5;
+
+	return {
+		c() {
+			small = element("small");
+			t0 = text("Contours valid ");
+			t1 = text(t1_value);
+			t2 = text("; instantaneous snapshot.");
+			br = element("br");
+			t3 = text("GEOS run ");
+			t4 = text(t4_value);
+			t5 = text(" UTC.");
+			attr(small, "class", "contour-time svelte-1b6hqhz");
+			attr(small, "data-testid", "contour-time");
+		},
+		m(target, anchor) {
+			insert(target, small, anchor);
+			append(small, t0);
+			append(small, t1);
+			append(small, t2);
+			append(small, br);
+			append(small, t3);
+			append(small, t4);
+			append(small, t5);
+		},
+		p(ctx, dirty) {
+			if (dirty[0] & /*contourStatus*/ 16777216 && t1_value !== (t1_value = /*displayTime*/ ctx[35](/*contourStatus*/ ctx[24].validTime) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*contourStatus*/ 16777216 && t4_value !== (t4_value = new Date(/*contourStatus*/ ctx[24].runTime).toISOString().slice(0, 16).replace('T', ' ') + "")) set_data(t4, t4_value);
+		},
+		d(detaching) {
+			if (detaching) {
+				detach(small);
+			}
+		}
+	};
+}
+
+// (494:6) {#if ![...places, ...saved].some(p => p.name === selected.name)}
 function create_if_block_19(ctx) {
 	let option;
 	let t_value = /*selected*/ ctx[6].name + "";
@@ -1594,7 +2477,7 @@ function create_if_block_19(ctx) {
 		p(ctx, dirty) {
 			if (dirty[0] & /*selected*/ 64 && t_value !== (t_value = /*selected*/ ctx[6].name + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*selected, saved*/ 4194368 | dirty[1] & /*places*/ 2 && option_value_value !== (option_value_value = /*selected*/ ctx[6].name)) {
+			if (dirty[0] & /*selected, saved*/ 8388672 | dirty[1] & /*places*/ 8 && option_value_value !== (option_value_value = /*selected*/ ctx[6].name)) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -1607,17 +2490,17 @@ function create_if_block_19(ctx) {
 	};
 }
 
-// (456:6) {#each places as p}
+// (495:6) {#each places as p}
 function create_each_block_5(ctx) {
 	let option;
-	let t_value = /*p*/ ctx[118].name + "";
+	let t_value = /*p*/ ctx[128].name + "";
 	let t;
 
 	return {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = /*p*/ ctx[118].name;
+			option.__value = /*p*/ ctx[128].name;
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1633,10 +2516,10 @@ function create_each_block_5(ctx) {
 	};
 }
 
-// (457:6) {#each saved.filter(p => !places.some(v => v.name === p.name)) as p}
+// (496:6) {#each saved.filter(p => !places.some(v => v.name === p.name)) as p}
 function create_each_block_4(ctx) {
 	let option;
-	let t_value = /*p*/ ctx[118].name + "";
+	let t_value = /*p*/ ctx[128].name + "";
 	let t;
 	let option_value_value;
 
@@ -1644,7 +2527,7 @@ function create_each_block_4(ctx) {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = option_value_value = /*p*/ ctx[118].name;
+			option.__value = option_value_value = /*p*/ ctx[128].name;
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1652,9 +2535,9 @@ function create_each_block_4(ctx) {
 			append(option, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*saved*/ 4194304 && t_value !== (t_value = /*p*/ ctx[118].name + "")) set_data(t, t_value);
+			if (dirty[0] & /*saved*/ 8388608 && t_value !== (t_value = /*p*/ ctx[128].name + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*saved*/ 4194304 && option_value_value !== (option_value_value = /*p*/ ctx[118].name)) {
+			if (dirty[0] & /*saved*/ 8388608 && option_value_value !== (option_value_value = /*p*/ ctx[128].name)) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -1667,7 +2550,7 @@ function create_each_block_4(ctx) {
 	};
 }
 
-// (461:4) {#if locationError}
+// (500:4) {#if locationError}
 function create_if_block_18(ctx) {
 	let p_1;
 	let t;
@@ -1675,8 +2558,8 @@ function create_if_block_18(ctx) {
 	return {
 		c() {
 			p_1 = element("p");
-			t = text(/*locationError*/ ctx[19]);
-			attr(p_1, "class", "error svelte-17wy0sx");
+			t = text(/*locationError*/ ctx[20]);
+			attr(p_1, "class", "error svelte-1b6hqhz");
 			attr(p_1, "role", "alert");
 		},
 		m(target, anchor) {
@@ -1684,7 +2567,7 @@ function create_if_block_18(ctx) {
 			append(p_1, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*locationError*/ 524288) set_data(t, /*locationError*/ ctx[19]);
+			if (dirty[0] & /*locationError*/ 1048576) set_data(t, /*locationError*/ ctx[20]);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1694,7 +2577,7 @@ function create_if_block_18(ctx) {
 	};
 }
 
-// (484:4) {:else}
+// (523:4) {:else}
 function create_else_block_3(ctx) {
 	let label0;
 	let t0;
@@ -1705,7 +2588,7 @@ function create_else_block_3(ctx) {
 	let label1;
 	let t4;
 	let select1;
-	let show_if = /*satTime*/ ctx[9] && !/*satMeta*/ ctx[10]?.times.includes(/*satTime*/ ctx[9]);
+	let show_if = /*satTime*/ ctx[10] && !/*satMeta*/ ctx[11]?.times.includes(/*satTime*/ ctx[10]);
 	let if_block0_anchor;
 	let select1_disabled_value;
 	let t5;
@@ -1719,7 +2602,7 @@ function create_else_block_3(ctx) {
 	let t11;
 	let p0;
 
-	let t12_value = (/*satSource*/ ctx[8] === 'global'
+	let t12_value = (/*satSource*/ ctx[9] === 'global'
 	? 'Three-hour dust RGB composite from several geostationary satellites.'
 	: 'Ten-minute Meteosat Dust RGB for Europe, Africa and the Middle East.') + "";
 
@@ -1732,17 +2615,17 @@ function create_else_block_3(ctx) {
 	let mounted;
 	let dispose;
 	let if_block0 = show_if && create_if_block_17(ctx);
-	let each_value_3 = ensure_array_like(/*satMeta*/ ctx[10]?.times || []);
+	let each_value_3 = ensure_array_like(/*satMeta*/ ctx[11]?.times || []);
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value_3.length; i += 1) {
 		each_blocks[i] = create_each_block_3(get_each_context_3(ctx, each_value_3, i));
 	}
 
-	let if_block1 = /*satError*/ ctx[26] && create_if_block_16(ctx);
-	let if_block2 = (/*satMetaLoading*/ ctx[28] || /*satLoading*/ ctx[27]) && create_if_block_15();
-	let if_block3 = /*satTime*/ ctx[9] && create_if_block_14(ctx);
-	let if_block4 = /*satDelayed*/ ctx[30] && create_if_block_13();
+	let if_block1 = /*satError*/ ctx[28] && create_if_block_16(ctx);
+	let if_block2 = (/*satMetaLoading*/ ctx[30] || /*satLoading*/ ctx[29]) && create_if_block_15();
+	let if_block3 = /*satTime*/ ctx[10] && create_if_block_14(ctx);
+	let if_block4 = /*satDelayed*/ ctx[32] && create_if_block_13();
 
 	return {
 		c() {
@@ -1784,25 +2667,25 @@ function create_else_block_3(ctx) {
 			p1.textContent = "Satellite time is independent of Windy’s forecast timeline. RGB imagery supports visual dust tracking; it does not measure surface dust concentration.";
 			t16 = space();
 			small = element("small");
-			small.innerHTML = `Imagery: <a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer" class="svelte-17wy0sx">EUMETSAT EUMETView</a> · <a href="https://user.eumetsat.int/resources/user-guides/dust-clouds" target="_blank" rel="noopener noreferrer" class="svelte-17wy0sx">Interpretation guide</a>`;
+			small.innerHTML = `Imagery: <a href="https://view.eumetsat.int/" target="_blank" rel="noopener noreferrer" class="svelte-1b6hqhz">EUMETSAT EUMETView</a> · <a href="https://user.eumetsat.int/resources/user-guides/dust-clouds" target="_blank" rel="noopener noreferrer" class="svelte-1b6hqhz">Interpretation guide</a>`;
 			option0.__value = "global";
 			set_input_value(option0, option0.__value);
 			option1.__value = "meteosat";
 			set_input_value(option1, option1.__value);
 			attr(select0, "aria-label", "Satellite source");
-			attr(select0, "class", "svelte-17wy0sx");
-			if (/*satSource*/ ctx[8] === void 0) add_render_callback(() => /*select0_change_handler*/ ctx[71].call(select0));
-			attr(label0, "class", "place svelte-17wy0sx");
+			attr(select0, "class", "svelte-1b6hqhz");
+			if (/*satSource*/ ctx[9] === void 0) add_render_callback(() => /*select0_change_handler*/ ctx[81].call(select0));
+			attr(label0, "class", "place svelte-1b6hqhz");
 			attr(select1, "aria-label", "Observation time");
-			select1.disabled = select1_disabled_value = !/*satMeta*/ ctx[10];
-			attr(select1, "class", "svelte-17wy0sx");
-			if (/*satTime*/ ctx[9] === void 0) add_render_callback(() => /*select1_change_handler*/ ctx[72].call(select1));
-			attr(label1, "class", "place svelte-17wy0sx");
-			button.disabled = button_disabled_value = !/*satMeta*/ ctx[10];
-			attr(button, "class", "svelte-17wy0sx");
-			attr(p0, "class", "explain svelte-17wy0sx");
-			attr(p1, "class", "explain svelte-17wy0sx");
-			attr(small, "class", "svelte-17wy0sx");
+			select1.disabled = select1_disabled_value = !/*satMeta*/ ctx[11];
+			attr(select1, "class", "svelte-1b6hqhz");
+			if (/*satTime*/ ctx[10] === void 0) add_render_callback(() => /*select1_change_handler*/ ctx[82].call(select1));
+			attr(label1, "class", "place svelte-1b6hqhz");
+			button.disabled = button_disabled_value = !/*satMeta*/ ctx[11];
+			attr(button, "class", "svelte-1b6hqhz");
+			attr(p0, "class", "explain svelte-1b6hqhz");
+			attr(p1, "class", "explain svelte-1b6hqhz");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, label0, anchor);
@@ -1810,7 +2693,7 @@ function create_else_block_3(ctx) {
 			append(label0, select0);
 			append(select0, option0);
 			append(select0, option1);
-			select_option(select0, /*satSource*/ ctx[8], true);
+			select_option(select0, /*satSource*/ ctx[9], true);
 			insert(target, t3, anchor);
 			insert(target, label1, anchor);
 			append(label1, t4);
@@ -1824,7 +2707,7 @@ function create_else_block_3(ctx) {
 				}
 			}
 
-			select_option(select1, /*satTime*/ ctx[9], true);
+			select_option(select1, /*satTime*/ ctx[10], true);
 			insert(target, t5, anchor);
 			insert(target, button, anchor);
 			append(button, t6);
@@ -1847,22 +2730,22 @@ function create_else_block_3(ctx) {
 
 			if (!mounted) {
 				dispose = [
-					listen(select0, "change", /*select0_change_handler*/ ctx[71]),
-					listen(select0, "change", /*changeSatellite*/ ctx[44]),
-					listen(select1, "change", /*select1_change_handler*/ ctx[72]),
-					listen(select1, "change", /*change_handler_1*/ ctx[73]),
-					listen(button, "click", /*click_handler_6*/ ctx[74])
+					listen(select0, "change", /*select0_change_handler*/ ctx[81]),
+					listen(select0, "change", /*changeSatellite*/ ctx[47]),
+					listen(select1, "change", /*select1_change_handler*/ ctx[82]),
+					listen(select1, "change", /*change_handler_1*/ ctx[83]),
+					listen(button, "click", /*click_handler_6*/ ctx[84])
 				];
 
 				mounted = true;
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satSource*/ 256) {
-				select_option(select0, /*satSource*/ ctx[8]);
+			if (dirty[0] & /*satSource*/ 512) {
+				select_option(select0, /*satSource*/ ctx[9]);
 			}
 
-			if (dirty[0] & /*satTime, satMeta*/ 1536) show_if = /*satTime*/ ctx[9] && !/*satMeta*/ ctx[10]?.times.includes(/*satTime*/ ctx[9]);
+			if (dirty[0] & /*satTime, satMeta*/ 3072) show_if = /*satTime*/ ctx[10] && !/*satMeta*/ ctx[11]?.times.includes(/*satTime*/ ctx[10]);
 
 			if (show_if) {
 				if (if_block0) {
@@ -1877,8 +2760,8 @@ function create_else_block_3(ctx) {
 				if_block0 = null;
 			}
 
-			if (dirty[0] & /*satMeta*/ 1024 | dirty[1] & /*displayTime*/ 4) {
-				each_value_3 = ensure_array_like(/*satMeta*/ ctx[10]?.times || []);
+			if (dirty[0] & /*satMeta*/ 2048 | dirty[1] & /*displayTime*/ 16) {
+				each_value_3 = ensure_array_like(/*satMeta*/ ctx[11]?.times || []);
 				let i;
 
 				for (i = 0; i < each_value_3.length; i += 1) {
@@ -1900,19 +2783,19 @@ function create_else_block_3(ctx) {
 				each_blocks.length = each_value_3.length;
 			}
 
-			if (dirty[0] & /*satMeta*/ 1024 && select1_disabled_value !== (select1_disabled_value = !/*satMeta*/ ctx[10])) {
+			if (dirty[0] & /*satMeta*/ 2048 && select1_disabled_value !== (select1_disabled_value = !/*satMeta*/ ctx[11])) {
 				select1.disabled = select1_disabled_value;
 			}
 
-			if (dirty[0] & /*satTime, satMeta*/ 1536) {
-				select_option(select1, /*satTime*/ ctx[9]);
+			if (dirty[0] & /*satTime, satMeta*/ 3072) {
+				select_option(select1, /*satTime*/ ctx[10]);
 			}
 
-			if (dirty[0] & /*satMeta*/ 1024 && button_disabled_value !== (button_disabled_value = !/*satMeta*/ ctx[10])) {
+			if (dirty[0] & /*satMeta*/ 2048 && button_disabled_value !== (button_disabled_value = !/*satMeta*/ ctx[11])) {
 				button.disabled = button_disabled_value;
 			}
 
-			if (/*satError*/ ctx[26]) {
+			if (/*satError*/ ctx[28]) {
 				if (if_block1) {
 					if_block1.p(ctx, dirty);
 				} else {
@@ -1925,7 +2808,7 @@ function create_else_block_3(ctx) {
 				if_block1 = null;
 			}
 
-			if (/*satMetaLoading*/ ctx[28] || /*satLoading*/ ctx[27]) {
+			if (/*satMetaLoading*/ ctx[30] || /*satLoading*/ ctx[29]) {
 				if (if_block2) ; else {
 					if_block2 = create_if_block_15();
 					if_block2.c();
@@ -1936,7 +2819,7 @@ function create_else_block_3(ctx) {
 				if_block2 = null;
 			}
 
-			if (/*satTime*/ ctx[9]) {
+			if (/*satTime*/ ctx[10]) {
 				if (if_block3) {
 					if_block3.p(ctx, dirty);
 				} else {
@@ -1949,7 +2832,7 @@ function create_else_block_3(ctx) {
 				if_block3 = null;
 			}
 
-			if (/*satDelayed*/ ctx[30]) {
+			if (/*satDelayed*/ ctx[32]) {
 				if (if_block4) ; else {
 					if_block4 = create_if_block_13();
 					if_block4.c();
@@ -1960,7 +2843,7 @@ function create_else_block_3(ctx) {
 				if_block4 = null;
 			}
 
-			if (dirty[0] & /*satSource*/ 256 && t12_value !== (t12_value = (/*satSource*/ ctx[8] === 'global'
+			if (dirty[0] & /*satSource*/ 512 && t12_value !== (t12_value = (/*satSource*/ ctx[9] === 'global'
 			? 'Three-hour dust RGB composite from several geostationary satellites.'
 			: 'Ten-minute Meteosat Dust RGB for Europe, Africa and the Middle East.') + "")) set_data(t12, t12_value);
 		},
@@ -1995,7 +2878,7 @@ function create_else_block_3(ctx) {
 	};
 }
 
-// (463:4) {#if view === 'forecast'}
+// (502:4) {#if view === 'forecast'}
 function create_if_block_2(ctx) {
 	let div0;
 	let select;
@@ -2016,7 +2899,7 @@ function create_if_block_2(ctx) {
 	let t9;
 	let t10;
 	let strong;
-	let t11_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.[/*field*/ ctx[4]], /*field*/ ctx[4] === 'dustAod' ? 2 : 1) + "";
+	let t11_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.[/*field*/ ctx[4]], /*field*/ ctx[4] === 'dustAod' ? 2 : 1) + "";
 	let t11;
 	let t12;
 	let t13;
@@ -2024,19 +2907,19 @@ function create_if_block_2(ctx) {
 	let div2;
 	let dt0;
 	let dd0;
-	let t15_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustSurface) + "";
+	let t15_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustSurface) + "";
 	let t15;
 	let t16;
 	let div3;
 	let dt1;
 	let dd1;
-	let t18_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustFine) + "";
+	let t18_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustFine) + "";
 	let t18;
 	let t19;
 	let div4;
 	let dt2;
 	let dd2;
-	let t21_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustAod, 2) + "";
+	let t21_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustAod, 2) + "";
 	let t21;
 	let t22;
 	let div5;
@@ -2047,9 +2930,9 @@ function create_if_block_2(ctx) {
 	let t25;
 	let p_1;
 
-	let t26_value = (/*guidance*/ ctx[31] === 'met'
+	let t26_value = (/*guidance*/ ctx[33] === 'met'
 	? 'Above your surface-dust threshold'
-	: /*guidance*/ ctx[31] === 'below'
+	: /*guidance*/ ctx[33] === 'below'
 		? 'Below your surface-dust threshold'
 		: 'Threshold status unavailable') + "";
 
@@ -2070,18 +2953,18 @@ function create_if_block_2(ctx) {
 	let t36;
 	let mounted;
 	let dispose;
-	let if_block0 = /*error*/ ctx[17] && create_if_block_12(ctx);
-	let if_block1 = /*frameError*/ ctx[18] && create_if_block_11(ctx);
-	let if_block2 = (/*loading*/ ctx[15] || /*frameLoading*/ ctx[16]) && create_if_block_10(ctx);
-	let if_block3 = /*stale*/ ctx[11] && create_if_block_9();
-	let if_block4 = /*sample*/ ctx[13]?.[/*field*/ ctx[4]] != null && create_if_block_8(ctx);
+	let if_block0 = /*error*/ ctx[18] && create_if_block_12(ctx);
+	let if_block1 = /*frameError*/ ctx[19] && create_if_block_11(ctx);
+	let if_block2 = (/*loading*/ ctx[16] || /*frameLoading*/ ctx[17]) && create_if_block_10(ctx);
+	let if_block3 = /*stale*/ ctx[12] && create_if_block_9();
+	let if_block4 = /*sample*/ ctx[14]?.[/*field*/ ctx[4]] != null && create_if_block_8(ctx);
 
-	function select_block_type_2(ctx, dirty) {
-		if (/*desired*/ ctx[12]) return create_if_block_7;
+	function select_block_type_3(ctx, dirty) {
+		if (/*desired*/ ctx[13]) return create_if_block_7;
 		return create_else_block_2;
 	}
 
-	let current_block_type = select_block_type_2(ctx);
+	let current_block_type = select_block_type_3(ctx);
 	let if_block5 = current_block_type(ctx);
 	let if_block6 = /*showDust*/ ctx[2] && create_if_block_6(ctx);
 	let each_value_1 = ensure_array_like(/*forecast*/ ctx[0]?.frames || []);
@@ -2091,15 +2974,15 @@ function create_if_block_2(ctx) {
 		each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
 	}
 
-	function select_block_type_3(ctx, dirty) {
-		if (/*seriesLoading*/ ctx[24]) return create_if_block_5;
+	function select_block_type_4(ctx, dirty) {
+		if (/*seriesLoading*/ ctx[26]) return create_if_block_5;
 		return create_else_block_1;
 	}
 
-	let current_block_type_1 = select_block_type_3(ctx);
+	let current_block_type_1 = select_block_type_4(ctx);
 	let if_block7 = current_block_type_1(ctx);
-	let if_block8 = /*seriesRows*/ ctx[23].length && create_if_block_4(ctx);
-	let if_block9 = /*sample*/ ctx[13] && create_if_block_3(ctx);
+	let if_block8 = /*seriesRows*/ ctx[25].length && create_if_block_4(ctx);
+	let if_block9 = /*sample*/ ctx[14] && create_if_block_3(ctx);
 
 	return {
 		c() {
@@ -2193,44 +3076,44 @@ function create_if_block_2(ctx) {
 			option2.__value = "dustAod";
 			set_input_value(option2, option2.__value);
 			attr(select, "aria-label", "Dust field");
-			attr(select, "class", "svelte-17wy0sx");
-			if (/*field*/ ctx[4] === void 0) add_render_callback(() => /*select_change_handler_1*/ ctx[66].call(select));
+			attr(select, "class", "svelte-1b6hqhz");
+			if (/*field*/ ctx[4] === void 0) add_render_callback(() => /*select_change_handler_3*/ ctx[76].call(select));
 			attr(input0, "aria-label", "Show dust map");
 			attr(input0, "type", "checkbox");
-			attr(input0, "class", "svelte-17wy0sx");
-			attr(label0, "class", "svelte-17wy0sx");
-			attr(div0, "class", "field-controls svelte-17wy0sx");
-			attr(span, "class", "svelte-17wy0sx");
+			attr(input0, "class", "svelte-1b6hqhz");
+			attr(label0, "class", "svelte-1b6hqhz");
+			attr(div0, "class", "field-controls svelte-1b6hqhz");
+			attr(span, "class", "svelte-1b6hqhz");
 			attr(strong, "data-testid", "point-value");
-			attr(strong, "class", "svelte-17wy0sx");
-			attr(div1, "class", "reading svelte-17wy0sx");
-			attr(dt0, "class", "svelte-17wy0sx");
-			attr(dd0, "class", "svelte-17wy0sx");
-			attr(div2, "class", "svelte-17wy0sx");
-			attr(dt1, "class", "svelte-17wy0sx");
-			attr(dd1, "class", "svelte-17wy0sx");
-			attr(div3, "class", "svelte-17wy0sx");
-			attr(dt2, "class", "svelte-17wy0sx");
-			attr(dd2, "class", "svelte-17wy0sx");
-			attr(div4, "class", "svelte-17wy0sx");
-			attr(dl, "class", "svelte-17wy0sx");
+			attr(strong, "class", "svelte-1b6hqhz");
+			attr(div1, "class", "reading svelte-1b6hqhz");
+			attr(dt0, "class", "svelte-1b6hqhz");
+			attr(dd0, "class", "svelte-1b6hqhz");
+			attr(div2, "class", "svelte-1b6hqhz");
+			attr(dt1, "class", "svelte-1b6hqhz");
+			attr(dd1, "class", "svelte-1b6hqhz");
+			attr(div3, "class", "svelte-1b6hqhz");
+			attr(dt2, "class", "svelte-1b6hqhz");
+			attr(dd2, "class", "svelte-1b6hqhz");
+			attr(div4, "class", "svelte-1b6hqhz");
+			attr(dl, "class", "svelte-1b6hqhz");
 			attr(input1, "aria-label", "Dust threshold");
 			attr(input1, "type", "number");
 			attr(input1, "min", "1");
 			attr(input1, "step", "10");
-			attr(input1, "class", "svelte-17wy0sx");
-			attr(label1, "class", "svelte-17wy0sx");
+			attr(input1, "class", "svelte-1b6hqhz");
+			attr(label1, "class", "svelte-1b6hqhz");
 			attr(p_1, "data-testid", "threshold-state");
-			attr(p_1, "class", "svelte-17wy0sx");
-			toggle_class(p_1, "met", /*guidance*/ ctx[31] === 'met');
-			attr(small0, "class", "svelte-17wy0sx");
-			attr(div5, "class", "threshold svelte-17wy0sx");
-			attr(summary0, "class", "svelte-17wy0sx");
-			attr(div6, "class", "timeline svelte-17wy0sx");
-			attr(details0, "class", "svelte-17wy0sx");
-			attr(summary1, "class", "svelte-17wy0sx");
-			attr(details1, "class", "svelte-17wy0sx");
-			attr(small1, "class", "resolution svelte-17wy0sx");
+			attr(p_1, "class", "svelte-1b6hqhz");
+			toggle_class(p_1, "met", /*guidance*/ ctx[33] === 'met');
+			attr(small0, "class", "svelte-1b6hqhz");
+			attr(div5, "class", "threshold svelte-1b6hqhz");
+			attr(summary0, "class", "svelte-1b6hqhz");
+			attr(div6, "class", "timeline svelte-1b6hqhz");
+			attr(details0, "class", "svelte-1b6hqhz");
+			attr(summary1, "class", "svelte-1b6hqhz");
+			attr(details1, "class", "svelte-1b6hqhz");
+			attr(small1, "class", "resolution svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, div0, anchor);
@@ -2315,11 +3198,11 @@ function create_if_block_2(ctx) {
 
 			if (!mounted) {
 				dispose = [
-					listen(select, "change", /*select_change_handler_1*/ ctx[66]),
-					listen(select, "change", /*savePreferences*/ ctx[35]),
-					listen(input0, "change", /*input0_change_handler_1*/ ctx[67]),
-					listen(input1, "input", /*input1_input_handler_1*/ ctx[68]),
-					listen(input1, "change", /*savePreferences*/ ctx[35])
+					listen(select, "change", /*select_change_handler_3*/ ctx[76]),
+					listen(select, "change", /*savePreferences*/ ctx[37]),
+					listen(input0, "change", /*input0_change_handler_2*/ ctx[77]),
+					listen(input1, "input", /*input1_input_handler_1*/ ctx[78]),
+					listen(input1, "change", /*savePreferences*/ ctx[37])
 				];
 
 				mounted = true;
@@ -2334,7 +3217,7 @@ function create_if_block_2(ctx) {
 				input0.checked = /*showDust*/ ctx[2];
 			}
 
-			if (/*error*/ ctx[17]) {
+			if (/*error*/ ctx[18]) {
 				if (if_block0) {
 					if_block0.p(ctx, dirty);
 				} else {
@@ -2347,7 +3230,7 @@ function create_if_block_2(ctx) {
 				if_block0 = null;
 			}
 
-			if (/*frameError*/ ctx[18]) {
+			if (/*frameError*/ ctx[19]) {
 				if (if_block1) {
 					if_block1.p(ctx, dirty);
 				} else {
@@ -2360,7 +3243,7 @@ function create_if_block_2(ctx) {
 				if_block1 = null;
 			}
 
-			if (/*loading*/ ctx[15] || /*frameLoading*/ ctx[16]) {
+			if (/*loading*/ ctx[16] || /*frameLoading*/ ctx[17]) {
 				if (if_block2) {
 					if_block2.p(ctx, dirty);
 				} else {
@@ -2373,7 +3256,7 @@ function create_if_block_2(ctx) {
 				if_block2 = null;
 			}
 
-			if (/*stale*/ ctx[11]) {
+			if (/*stale*/ ctx[12]) {
 				if (if_block3) ; else {
 					if_block3 = create_if_block_9();
 					if_block3.c();
@@ -2385,9 +3268,9 @@ function create_if_block_2(ctx) {
 			}
 
 			if (dirty[0] & /*field*/ 16 && t9_value !== (t9_value = FIELD_INFO[/*field*/ ctx[4]].label + "")) set_data(t9, t9_value);
-			if (dirty[0] & /*sample, field*/ 8208 && t11_value !== (t11_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.[/*field*/ ctx[4]], /*field*/ ctx[4] === 'dustAod' ? 2 : 1) + "")) set_data(t11, t11_value);
+			if (dirty[0] & /*sample, field*/ 16400 && t11_value !== (t11_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.[/*field*/ ctx[4]], /*field*/ ctx[4] === 'dustAod' ? 2 : 1) + "")) set_data(t11, t11_value);
 
-			if (/*sample*/ ctx[13]?.[/*field*/ ctx[4]] != null) {
+			if (/*sample*/ ctx[14]?.[/*field*/ ctx[4]] != null) {
 				if (if_block4) {
 					if_block4.p(ctx, dirty);
 				} else {
@@ -2400,7 +3283,7 @@ function create_if_block_2(ctx) {
 				if_block4 = null;
 			}
 
-			if (current_block_type === (current_block_type = select_block_type_2(ctx)) && if_block5) {
+			if (current_block_type === (current_block_type = select_block_type_3(ctx)) && if_block5) {
 				if_block5.p(ctx, dirty);
 			} else {
 				if_block5.d(1);
@@ -2412,22 +3295,22 @@ function create_if_block_2(ctx) {
 				}
 			}
 
-			if (dirty[0] & /*sample*/ 8192 && t15_value !== (t15_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustSurface) + "")) set_data(t15, t15_value);
-			if (dirty[0] & /*sample*/ 8192 && t18_value !== (t18_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustFine) + "")) set_data(t18, t18_value);
-			if (dirty[0] & /*sample*/ 8192 && t21_value !== (t21_value = /*format*/ ctx[34](/*sample*/ ctx[13]?.dustAod, 2) + "")) set_data(t21, t21_value);
+			if (dirty[0] & /*sample*/ 16384 && t15_value !== (t15_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustSurface) + "")) set_data(t15, t15_value);
+			if (dirty[0] & /*sample*/ 16384 && t18_value !== (t18_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustFine) + "")) set_data(t18, t18_value);
+			if (dirty[0] & /*sample*/ 16384 && t21_value !== (t21_value = /*format*/ ctx[36](/*sample*/ ctx[14]?.dustAod, 2) + "")) set_data(t21, t21_value);
 
 			if (dirty[0] & /*threshold*/ 128 && to_number(input1.value) !== /*threshold*/ ctx[7]) {
 				set_input_value(input1, /*threshold*/ ctx[7]);
 			}
 
-			if (dirty[1] & /*guidance*/ 1 && t26_value !== (t26_value = (/*guidance*/ ctx[31] === 'met'
+			if (dirty[1] & /*guidance*/ 4 && t26_value !== (t26_value = (/*guidance*/ ctx[33] === 'met'
 			? 'Above your surface-dust threshold'
-			: /*guidance*/ ctx[31] === 'below'
+			: /*guidance*/ ctx[33] === 'below'
 				? 'Below your surface-dust threshold'
 				: 'Threshold status unavailable') + "")) set_data(t26, t26_value);
 
-			if (dirty[1] & /*guidance*/ 1) {
-				toggle_class(p_1, "met", /*guidance*/ ctx[31] === 'met');
+			if (dirty[1] & /*guidance*/ 4) {
+				toggle_class(p_1, "met", /*guidance*/ ctx[33] === 'met');
 			}
 
 			if (/*showDust*/ ctx[2]) {
@@ -2443,7 +3326,7 @@ function create_if_block_2(ctx) {
 				if_block6 = null;
 			}
 
-			if (dirty[0] & /*desired, forecast*/ 4097 | dirty[1] & /*displayTime*/ 4) {
+			if (dirty[0] & /*desired, forecast*/ 8193 | dirty[1] & /*displayTime*/ 16) {
 				each_value_1 = ensure_array_like(/*forecast*/ ctx[0]?.frames || []);
 				let i;
 
@@ -2466,7 +3349,7 @@ function create_if_block_2(ctx) {
 				each_blocks.length = each_value_1.length;
 			}
 
-			if (current_block_type_1 === (current_block_type_1 = select_block_type_3(ctx)) && if_block7) {
+			if (current_block_type_1 === (current_block_type_1 = select_block_type_4(ctx)) && if_block7) {
 				if_block7.p(ctx, dirty);
 			} else {
 				if_block7.d(1);
@@ -2478,7 +3361,7 @@ function create_if_block_2(ctx) {
 				}
 			}
 
-			if (/*seriesRows*/ ctx[23].length) {
+			if (/*seriesRows*/ ctx[25].length) {
 				if (if_block8) {
 					if_block8.p(ctx, dirty);
 				} else {
@@ -2491,7 +3374,7 @@ function create_if_block_2(ctx) {
 				if_block8 = null;
 			}
 
-			if (/*sample*/ ctx[13]) {
+			if (/*sample*/ ctx[14]) {
 				if (if_block9) {
 					if_block9.p(ctx, dirty);
 				} else {
@@ -2543,17 +3426,17 @@ function create_if_block_2(ctx) {
 	};
 }
 
-// (487:8) {#if satTime && !satMeta?.times.includes(satTime)}
+// (526:8) {#if satTime && !satMeta?.times.includes(satTime)}
 function create_if_block_17(ctx) {
 	let option;
-	let t_value = /*displayTime*/ ctx[33](/*satTime*/ ctx[9]) + "";
+	let t_value = /*displayTime*/ ctx[35](/*satTime*/ ctx[10]) + "";
 	let t;
 
 	return {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = /*satTime*/ ctx[9];
+			option.__value = /*satTime*/ ctx[10];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -2561,10 +3444,10 @@ function create_if_block_17(ctx) {
 			append(option, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satTime*/ 512 && t_value !== (t_value = /*displayTime*/ ctx[33](/*satTime*/ ctx[9]) + "")) set_data(t, t_value);
+			if (dirty[0] & /*satTime*/ 1024 && t_value !== (t_value = /*displayTime*/ ctx[35](/*satTime*/ ctx[10]) + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*satTime, satMeta*/ 1536) {
-				option.__value = /*satTime*/ ctx[9];
+			if (dirty[0] & /*satTime, satMeta*/ 3072) {
+				option.__value = /*satTime*/ ctx[10];
 				set_input_value(option, option.__value);
 			}
 		},
@@ -2576,10 +3459,10 @@ function create_if_block_17(ctx) {
 	};
 }
 
-// (488:8) {#each satMeta?.times || [] as time}
+// (527:8) {#each satMeta?.times || [] as time}
 function create_each_block_3(ctx) {
 	let option;
-	let t_value = /*displayTime*/ ctx[33](/*time*/ ctx[115]) + "";
+	let t_value = /*displayTime*/ ctx[35](/*time*/ ctx[125]) + "";
 	let t;
 	let option_value_value;
 
@@ -2587,7 +3470,7 @@ function create_each_block_3(ctx) {
 		c() {
 			option = element("option");
 			t = text(t_value);
-			option.__value = option_value_value = /*time*/ ctx[115];
+			option.__value = option_value_value = /*time*/ ctx[125];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -2595,9 +3478,9 @@ function create_each_block_3(ctx) {
 			append(option, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satMeta*/ 1024 && t_value !== (t_value = /*displayTime*/ ctx[33](/*time*/ ctx[115]) + "")) set_data(t, t_value);
+			if (dirty[0] & /*satMeta*/ 2048 && t_value !== (t_value = /*displayTime*/ ctx[35](/*time*/ ctx[125]) + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*satMeta*/ 1024 && option_value_value !== (option_value_value = /*time*/ ctx[115])) {
+			if (dirty[0] & /*satMeta*/ 2048 && option_value_value !== (option_value_value = /*time*/ ctx[125])) {
 				option.__value = option_value_value;
 				set_input_value(option, option.__value);
 			}
@@ -2610,7 +3493,7 @@ function create_each_block_3(ctx) {
 	};
 }
 
-// (491:6) {#if satError}
+// (530:6) {#if satError}
 function create_if_block_16(ctx) {
 	let p_1;
 	let t;
@@ -2618,8 +3501,8 @@ function create_if_block_16(ctx) {
 	return {
 		c() {
 			p_1 = element("p");
-			t = text(/*satError*/ ctx[26]);
-			attr(p_1, "class", "error svelte-17wy0sx");
+			t = text(/*satError*/ ctx[28]);
+			attr(p_1, "class", "error svelte-1b6hqhz");
 			attr(p_1, "role", "alert");
 		},
 		m(target, anchor) {
@@ -2627,7 +3510,7 @@ function create_if_block_16(ctx) {
 			append(p_1, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satError*/ 67108864) set_data(t, /*satError*/ ctx[26]);
+			if (dirty[0] & /*satError*/ 268435456) set_data(t, /*satError*/ ctx[28]);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2637,7 +3520,7 @@ function create_if_block_16(ctx) {
 	};
 }
 
-// (492:6) {#if satMetaLoading || satLoading}
+// (531:6) {#if satMetaLoading || satLoading}
 function create_if_block_15(ctx) {
 	let p_1;
 
@@ -2645,7 +3528,7 @@ function create_if_block_15(ctx) {
 		c() {
 			p_1 = element("p");
 			p_1.textContent = "Loading satellite observations…";
-			attr(p_1, "class", "loading svelte-17wy0sx");
+			attr(p_1, "class", "loading svelte-1b6hqhz");
 			attr(p_1, "role", "status");
 		},
 		m(target, anchor) {
@@ -2659,11 +3542,11 @@ function create_if_block_15(ctx) {
 	};
 }
 
-// (493:6) {#if satTime}
+// (532:6) {#if satTime}
 function create_if_block_14(ctx) {
 	let p_1;
 	let t0;
-	let t1_value = /*displayTime*/ ctx[33](/*satTime*/ ctx[9]) + "";
+	let t1_value = /*displayTime*/ ctx[35](/*satTime*/ ctx[10]) + "";
 	let t1;
 
 	return {
@@ -2671,7 +3554,7 @@ function create_if_block_14(ctx) {
 			p_1 = element("p");
 			t0 = text("Observed ");
 			t1 = text(t1_value);
-			attr(p_1, "class", "observation svelte-17wy0sx");
+			attr(p_1, "class", "observation svelte-1b6hqhz");
 			attr(p_1, "data-testid", "observation-stamp");
 		},
 		m(target, anchor) {
@@ -2680,7 +3563,7 @@ function create_if_block_14(ctx) {
 			append(p_1, t1);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*satTime*/ 512 && t1_value !== (t1_value = /*displayTime*/ ctx[33](/*satTime*/ ctx[9]) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*satTime*/ 1024 && t1_value !== (t1_value = /*displayTime*/ ctx[35](/*satTime*/ ctx[10]) + "")) set_data(t1, t1_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2690,7 +3573,7 @@ function create_if_block_14(ctx) {
 	};
 }
 
-// (494:6) {#if satDelayed}
+// (533:6) {#if satDelayed}
 function create_if_block_13(ctx) {
 	let p_1;
 
@@ -2698,7 +3581,7 @@ function create_if_block_13(ctx) {
 		c() {
 			p_1 = element("p");
 			p_1.textContent = "The latest available imagery is delayed. Check its observation time.";
-			attr(p_1, "class", "error svelte-17wy0sx");
+			attr(p_1, "class", "error svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, p_1, anchor);
@@ -2711,7 +3594,7 @@ function create_if_block_13(ctx) {
 	};
 }
 
-// (465:6) {#if error}
+// (504:6) {#if error}
 function create_if_block_12(ctx) {
 	let p_1;
 	let t;
@@ -2719,8 +3602,8 @@ function create_if_block_12(ctx) {
 	return {
 		c() {
 			p_1 = element("p");
-			t = text(/*error*/ ctx[17]);
-			attr(p_1, "class", "error svelte-17wy0sx");
+			t = text(/*error*/ ctx[18]);
+			attr(p_1, "class", "error svelte-1b6hqhz");
 			attr(p_1, "role", "alert");
 		},
 		m(target, anchor) {
@@ -2728,7 +3611,7 @@ function create_if_block_12(ctx) {
 			append(p_1, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*error*/ 131072) set_data(t, /*error*/ ctx[17]);
+			if (dirty[0] & /*error*/ 262144) set_data(t, /*error*/ ctx[18]);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2738,7 +3621,7 @@ function create_if_block_12(ctx) {
 	};
 }
 
-// (466:6) {#if frameError}
+// (505:6) {#if frameError}
 function create_if_block_11(ctx) {
 	let p_1;
 	let t;
@@ -2746,8 +3629,8 @@ function create_if_block_11(ctx) {
 	return {
 		c() {
 			p_1 = element("p");
-			t = text(/*frameError*/ ctx[18]);
-			attr(p_1, "class", "error svelte-17wy0sx");
+			t = text(/*frameError*/ ctx[19]);
+			attr(p_1, "class", "error svelte-1b6hqhz");
 			attr(p_1, "role", "alert");
 		},
 		m(target, anchor) {
@@ -2755,7 +3638,7 @@ function create_if_block_11(ctx) {
 			append(p_1, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*frameError*/ 262144) set_data(t, /*frameError*/ ctx[18]);
+			if (dirty[0] & /*frameError*/ 524288) set_data(t, /*frameError*/ ctx[19]);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2765,11 +3648,11 @@ function create_if_block_11(ctx) {
 	};
 }
 
-// (467:6) {#if loading || frameLoading}
+// (506:6) {#if loading || frameLoading}
 function create_if_block_10(ctx) {
 	let p_1;
 
-	let t_value = (/*loading*/ ctx[15]
+	let t_value = (/*loading*/ ctx[16]
 	? 'Reading GEOS forecast…'
 	: 'Loading native GEOS detail…') + "";
 
@@ -2779,7 +3662,7 @@ function create_if_block_10(ctx) {
 		c() {
 			p_1 = element("p");
 			t = text(t_value);
-			attr(p_1, "class", "loading svelte-17wy0sx");
+			attr(p_1, "class", "loading svelte-1b6hqhz");
 			attr(p_1, "role", "status");
 		},
 		m(target, anchor) {
@@ -2787,7 +3670,7 @@ function create_if_block_10(ctx) {
 			append(p_1, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*loading*/ 32768 && t_value !== (t_value = (/*loading*/ ctx[15]
+			if (dirty[0] & /*loading*/ 65536 && t_value !== (t_value = (/*loading*/ ctx[16]
 			? 'Reading GEOS forecast…'
 			: 'Loading native GEOS detail…') + "")) set_data(t, t_value);
 		},
@@ -2799,7 +3682,7 @@ function create_if_block_10(ctx) {
 	};
 }
 
-// (468:6) {#if stale}
+// (507:6) {#if stale}
 function create_if_block_9(ctx) {
 	let p_1;
 
@@ -2807,7 +3690,7 @@ function create_if_block_9(ctx) {
 		c() {
 			p_1 = element("p");
 			p_1.textContent = "Forecast expired or model run older than 36 hours. Map hidden.";
-			attr(p_1, "class", "error svelte-17wy0sx");
+			attr(p_1, "class", "error svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, p_1, anchor);
@@ -2820,7 +3703,7 @@ function create_if_block_9(ctx) {
 	};
 }
 
-// (469:164) {#if sample?.[field] != null}
+// (508:164) {#if sample?.[field] != null}
 function create_if_block_8(ctx) {
 	let small;
 	let t_value = FIELD_INFO[/*field*/ ctx[4]].units + "";
@@ -2830,7 +3713,7 @@ function create_if_block_8(ctx) {
 		c() {
 			small = element("small");
 			t = text(t_value);
-			attr(small, "class", "svelte-17wy0sx");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -2847,7 +3730,7 @@ function create_if_block_8(ctx) {
 	};
 }
 
-// (470:107) {:else}
+// (509:107) {:else}
 function create_else_block_2(ctx) {
 	let small;
 
@@ -2861,7 +3744,7 @@ function create_else_block_2(ctx) {
 		c() {
 			small = element("small");
 			t = text(t_value);
-			attr(small, "class", "svelte-17wy0sx");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -2880,13 +3763,13 @@ function create_else_block_2(ctx) {
 	};
 }
 
-// (470:8) {#if desired}
+// (509:8) {#if desired}
 function create_if_block_7(ctx) {
 	let small;
-	let t0_value = /*displayTime*/ ctx[33](/*desired*/ ctx[12].start) + "";
+	let t0_value = /*displayTime*/ ctx[35](/*desired*/ ctx[13].start) + "";
 	let t0;
 	let t1;
-	let t2_value = /*displayTime*/ ctx[33](/*desired*/ ctx[12].end) + "";
+	let t2_value = /*displayTime*/ ctx[35](/*desired*/ ctx[13].end) + "";
 	let t2;
 	let t3;
 
@@ -2897,7 +3780,7 @@ function create_if_block_7(ctx) {
 			t1 = text(" – ");
 			t2 = text(t2_value);
 			t3 = text(" · 3-hour mean");
-			attr(small, "class", "svelte-17wy0sx");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -2907,8 +3790,8 @@ function create_if_block_7(ctx) {
 			append(small, t3);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*desired*/ 4096 && t0_value !== (t0_value = /*displayTime*/ ctx[33](/*desired*/ ctx[12].start) + "")) set_data(t0, t0_value);
-			if (dirty[0] & /*desired*/ 4096 && t2_value !== (t2_value = /*displayTime*/ ctx[33](/*desired*/ ctx[12].end) + "")) set_data(t2, t2_value);
+			if (dirty[0] & /*desired*/ 8192 && t0_value !== (t0_value = /*displayTime*/ ctx[35](/*desired*/ ctx[13].start) + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*desired*/ 8192 && t2_value !== (t2_value = /*displayTime*/ ctx[35](/*desired*/ ctx[13].end) + "")) set_data(t2, t2_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2918,7 +3801,7 @@ function create_if_block_7(ctx) {
 	};
 }
 
-// (476:6) {#if showDust}
+// (515:6) {#if showDust}
 function create_if_block_6(ctx) {
 	let div;
 	let small;
@@ -2943,8 +3826,8 @@ function create_if_block_6(ctx) {
 			small = element("small");
 			t0 = text(t0_value);
 			t1 = text(" · missing cells stay transparent");
-			attr(div, "class", "legend svelte-17wy0sx");
-			attr(small, "class", "svelte-17wy0sx");
+			attr(div, "class", "legend svelte-1b6hqhz");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
@@ -2996,12 +3879,12 @@ function create_if_block_6(ctx) {
 	};
 }
 
-// (476:40) {#each FIELD_INFO[field].stops as stop, i}
+// (515:40) {#each FIELD_INFO[field].stops as stop, i}
 function create_each_block_2(ctx) {
 	let span;
-	let t0_value = /*stop*/ ctx[112] + "";
+	let t0_value = /*stop*/ ctx[122] + "";
 	let t0;
-	let t1_value = (/*i*/ ctx[114] === 5 ? '+' : '') + "";
+	let t1_value = (/*i*/ ctx[124] === 5 ? '+' : '') + "";
 	let t1;
 
 	return {
@@ -3009,8 +3892,8 @@ function create_each_block_2(ctx) {
 			span = element("span");
 			t0 = text(t0_value);
 			t1 = text(t1_value);
-			attr(span, "style", '--color:rgb(' + PALETTE[/*i*/ ctx[114]].join(',') + ')');
-			attr(span, "class", "svelte-17wy0sx");
+			attr(span, "style", '--color:rgb(' + PALETTE[/*i*/ ctx[124]].join(',') + ')');
+			attr(span, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, span, anchor);
@@ -3018,7 +3901,7 @@ function create_each_block_2(ctx) {
 			append(span, t1);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*field*/ 16 && t0_value !== (t0_value = /*stop*/ ctx[112] + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*field*/ 16 && t0_value !== (t0_value = /*stop*/ ctx[122] + "")) set_data(t0, t0_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -3028,24 +3911,24 @@ function create_each_block_2(ctx) {
 	};
 }
 
-// (477:72) {#each forecast?.frames || [] as item}
+// (516:72) {#each forecast?.frames || [] as item}
 function create_each_block_1(ctx) {
 	let button;
-	let t_value = /*displayTime*/ ctx[33](/*item*/ ctx[109].validTime) + "";
+	let t_value = /*displayTime*/ ctx[35](/*item*/ ctx[119].validTime) + "";
 	let t;
 	let mounted;
 	let dispose;
 
 	function click_handler_4() {
-		return /*click_handler_4*/ ctx[69](/*item*/ ctx[109]);
+		return /*click_handler_4*/ ctx[79](/*item*/ ctx[119]);
 	}
 
 	return {
 		c() {
 			button = element("button");
 			t = text(t_value);
-			attr(button, "class", "svelte-17wy0sx");
-			toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[109]);
+			attr(button, "class", "svelte-1b6hqhz");
+			toggle_class(button, "active", /*desired*/ ctx[13] === /*item*/ ctx[119]);
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
@@ -3058,10 +3941,10 @@ function create_each_block_1(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (dirty[0] & /*forecast*/ 1 && t_value !== (t_value = /*displayTime*/ ctx[33](/*item*/ ctx[109].validTime) + "")) set_data(t, t_value);
+			if (dirty[0] & /*forecast*/ 1 && t_value !== (t_value = /*displayTime*/ ctx[35](/*item*/ ctx[119].validTime) + "")) set_data(t, t_value);
 
-			if (dirty[0] & /*desired, forecast*/ 4097) {
-				toggle_class(button, "active", /*desired*/ ctx[12] === /*item*/ ctx[109]);
+			if (dirty[0] & /*desired, forecast*/ 8193) {
+				toggle_class(button, "active", /*desired*/ ctx[13] === /*item*/ ctx[119]);
 			}
 		},
 		d(detaching) {
@@ -3075,7 +3958,7 @@ function create_each_block_1(ctx) {
 	};
 }
 
-// (480:8) {:else}
+// (519:8) {:else}
 function create_else_block_1(ctx) {
 	let button;
 	let t0;
@@ -3090,9 +3973,9 @@ function create_else_block_1(ctx) {
 			t0 = text("Load full point forecast");
 			small = element("small");
 			small.textContent = "Downloads native forecast frames; may use tens of MB.";
-			button.disabled = button_disabled_value = !/*forecast*/ ctx[0] || /*stale*/ ctx[11] || !/*enabled*/ ctx[1];
-			attr(button, "class", "svelte-17wy0sx");
-			attr(small, "class", "svelte-17wy0sx");
+			button.disabled = button_disabled_value = !/*forecast*/ ctx[0] || /*stale*/ ctx[12] || !/*enabled*/ ctx[1];
+			attr(button, "class", "svelte-1b6hqhz");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
@@ -3100,12 +3983,12 @@ function create_else_block_1(ctx) {
 			insert(target, small, anchor);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*loadSeries*/ ctx[41]);
+				dispose = listen(button, "click", /*loadSeries*/ ctx[45]);
 				mounted = true;
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*forecast, stale, enabled*/ 2051 && button_disabled_value !== (button_disabled_value = !/*forecast*/ ctx[0] || /*stale*/ ctx[11] || !/*enabled*/ ctx[1])) {
+			if (dirty[0] & /*forecast, stale, enabled*/ 4099 && button_disabled_value !== (button_disabled_value = !/*forecast*/ ctx[0] || /*stale*/ ctx[12] || !/*enabled*/ ctx[1])) {
 				button.disabled = button_disabled_value;
 			}
 		},
@@ -3121,7 +4004,7 @@ function create_else_block_1(ctx) {
 	};
 }
 
-// (479:8) {#if seriesLoading}
+// (518:8) {#if seriesLoading}
 function create_if_block_5(ctx) {
 	let button;
 	let small;
@@ -3138,12 +4021,12 @@ function create_if_block_5(ctx) {
 			button = element("button");
 			button.textContent = "Cancel download";
 			small = element("small");
-			t1 = text(/*seriesDone*/ ctx[25]);
+			t1 = text(/*seriesDone*/ ctx[27]);
 			t2 = text("/");
 			t3 = text(t3_value);
 			t4 = text(" periods read");
-			attr(button, "class", "svelte-17wy0sx");
-			attr(small, "class", "svelte-17wy0sx");
+			attr(button, "class", "svelte-1b6hqhz");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
@@ -3154,12 +4037,12 @@ function create_if_block_5(ctx) {
 			append(small, t4);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*cancelSeries*/ ctx[37]);
+				dispose = listen(button, "click", /*cancelSeries*/ ctx[42]);
 				mounted = true;
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*seriesDone*/ 33554432) set_data(t1, /*seriesDone*/ ctx[25]);
+			if (dirty[0] & /*seriesDone*/ 134217728) set_data(t1, /*seriesDone*/ ctx[27]);
 			if (dirty[0] & /*forecast*/ 1 && t3_value !== (t3_value = (/*forecast*/ ctx[0]?.frames.length || 0) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
@@ -3174,13 +4057,13 @@ function create_if_block_5(ctx) {
 	};
 }
 
-// (481:8) {#if seriesRows.length}
+// (520:8) {#if seriesRows.length}
 function create_if_block_4(ctx) {
 	let div;
 	let table;
 	let thead;
 	let tbody;
-	let each_value = ensure_array_like(/*seriesRows*/ ctx[23]);
+	let each_value = ensure_array_like(/*seriesRows*/ ctx[25]);
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value.length; i += 1) {
@@ -3192,15 +4075,15 @@ function create_if_block_4(ctx) {
 			div = element("div");
 			table = element("table");
 			thead = element("thead");
-			thead.innerHTML = `<tr><th class="svelte-17wy0sx">Period start</th><th class="svelte-17wy0sx">Surface µg/m³</th><th class="svelte-17wy0sx">Fine µg/m³</th><th class="svelte-17wy0sx">AOD</th></tr>`;
+			thead.innerHTML = `<tr><th class="svelte-1b6hqhz">Period start</th><th class="svelte-1b6hqhz">Surface µg/m³</th><th class="svelte-1b6hqhz">Fine µg/m³</th><th class="svelte-1b6hqhz">AOD</th></tr>`;
 			tbody = element("tbody");
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				each_blocks[i].c();
 			}
 
-			attr(table, "class", "svelte-17wy0sx");
-			attr(div, "class", "series svelte-17wy0sx");
+			attr(table, "class", "svelte-1b6hqhz");
+			attr(div, "class", "series svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
@@ -3215,8 +4098,8 @@ function create_if_block_4(ctx) {
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*seriesRows*/ 8388608 | dirty[1] & /*format, displayTime*/ 12) {
-				each_value = ensure_array_like(/*seriesRows*/ ctx[23]);
+			if (dirty[0] & /*seriesRows*/ 33554432 | dirty[1] & /*format, displayTime*/ 48) {
+				each_value = ensure_array_like(/*seriesRows*/ ctx[25]);
 				let i;
 
 				for (i = 0; i < each_value.length; i += 1) {
@@ -3248,27 +4131,27 @@ function create_if_block_4(ctx) {
 	};
 }
 
-// (481:163) {#each seriesRows as row}
+// (520:163) {#each seriesRows as row}
 function create_each_block(ctx) {
 	let tr;
 	let td0;
 	let button;
-	let t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[106].start) + "";
+	let t0_value = /*displayTime*/ ctx[35](/*row*/ ctx[116].start) + "";
 	let t0;
 	let td1;
-	let t1_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustSurface) + "";
+	let t1_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustSurface) + "";
 	let t1;
 	let td2;
-	let t2_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustFine) + "";
+	let t2_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustFine) + "";
 	let t2;
 	let td3;
-	let t3_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustAod, 2) + "";
+	let t3_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustAod, 2) + "";
 	let t3;
 	let mounted;
 	let dispose;
 
 	function click_handler_5() {
-		return /*click_handler_5*/ ctx[70](/*row*/ ctx[106]);
+		return /*click_handler_5*/ ctx[80](/*row*/ ctx[116]);
 	}
 
 	return {
@@ -3283,11 +4166,11 @@ function create_each_block(ctx) {
 			t2 = text(t2_value);
 			td3 = element("td");
 			t3 = text(t3_value);
-			attr(button, "class", "svelte-17wy0sx");
-			attr(td0, "class", "svelte-17wy0sx");
-			attr(td1, "class", "svelte-17wy0sx");
-			attr(td2, "class", "svelte-17wy0sx");
-			attr(td3, "class", "svelte-17wy0sx");
+			attr(button, "class", "svelte-1b6hqhz");
+			attr(td0, "class", "svelte-1b6hqhz");
+			attr(td1, "class", "svelte-1b6hqhz");
+			attr(td2, "class", "svelte-1b6hqhz");
+			attr(td3, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, tr, anchor);
@@ -3308,10 +4191,10 @@ function create_each_block(ctx) {
 		},
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
-			if (dirty[0] & /*seriesRows*/ 8388608 && t0_value !== (t0_value = /*displayTime*/ ctx[33](/*row*/ ctx[106].start) + "")) set_data(t0, t0_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t1_value !== (t1_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustSurface) + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t2_value !== (t2_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustFine) + "")) set_data(t2, t2_value);
-			if (dirty[0] & /*seriesRows*/ 8388608 && t3_value !== (t3_value = /*format*/ ctx[34](/*row*/ ctx[106].value?.dustAod, 2) + "")) set_data(t3, t3_value);
+			if (dirty[0] & /*seriesRows*/ 33554432 && t0_value !== (t0_value = /*displayTime*/ ctx[35](/*row*/ ctx[116].start) + "")) set_data(t0, t0_value);
+			if (dirty[0] & /*seriesRows*/ 33554432 && t1_value !== (t1_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustSurface) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*seriesRows*/ 33554432 && t2_value !== (t2_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustFine) + "")) set_data(t2, t2_value);
+			if (dirty[0] & /*seriesRows*/ 33554432 && t3_value !== (t3_value = /*format*/ ctx[36](/*row*/ ctx[116].value?.dustAod, 2) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -3324,13 +4207,13 @@ function create_each_block(ctx) {
 	};
 }
 
-// (483:80) {#if sample}
+// (522:80) {#if sample}
 function create_if_block_3(ctx) {
 	let t0;
-	let t1_value = /*sample*/ ctx[13].lat.toFixed(3) + "";
+	let t1_value = /*sample*/ ctx[14].lat.toFixed(3) + "";
 	let t1;
 	let t2;
-	let t3_value = /*sample*/ ctx[13].lon.toFixed(3) + "";
+	let t3_value = /*sample*/ ctx[14].lon.toFixed(3) + "";
 	let t3;
 	let t4;
 
@@ -3350,8 +4233,8 @@ function create_if_block_3(ctx) {
 			insert(target, t4, anchor);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*sample*/ 8192 && t1_value !== (t1_value = /*sample*/ ctx[13].lat.toFixed(3) + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*sample*/ 8192 && t3_value !== (t3_value = /*sample*/ ctx[13].lon.toFixed(3) + "")) set_data(t3, t3_value);
+			if (dirty[0] & /*sample*/ 16384 && t1_value !== (t1_value = /*sample*/ ctx[14].lat.toFixed(3) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*sample*/ 16384 && t3_value !== (t3_value = /*sample*/ ctx[14].lon.toFixed(3) + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -3365,7 +4248,7 @@ function create_if_block_3(ctx) {
 	};
 }
 
-// (506:6) {#if forecast}
+// (545:6) {#if forecast}
 function create_if_block_1(ctx) {
 	let small;
 	let t0;
@@ -3374,7 +4257,7 @@ function create_if_block_1(ctx) {
 	let t2;
 	let br;
 	let t3;
-	let t4_value = /*displayTime*/ ctx[33](/*forecast*/ ctx[0].retrievedAt) + "";
+	let t4_value = /*displayTime*/ ctx[35](/*forecast*/ ctx[0].retrievedAt) + "";
 	let t4;
 	let t5;
 
@@ -3388,7 +4271,7 @@ function create_if_block_1(ctx) {
 			t3 = text("Retrieved ");
 			t4 = text(t4_value);
 			t5 = text(" · display times use your device timezone");
-			attr(small, "class", "svelte-17wy0sx");
+			attr(small, "class", "svelte-1b6hqhz");
 		},
 		m(target, anchor) {
 			insert(target, small, anchor);
@@ -3402,7 +4285,7 @@ function create_if_block_1(ctx) {
 		},
 		p(ctx, dirty) {
 			if (dirty[0] & /*forecast*/ 1 && t1_value !== (t1_value = new Date(/*forecast*/ ctx[0].runTime).toISOString().slice(0, 16).replace('T', ' ') + "")) set_data(t1, t1_value);
-			if (dirty[0] & /*forecast*/ 1 && t4_value !== (t4_value = /*displayTime*/ ctx[33](/*forecast*/ ctx[0].retrievedAt) + "")) set_data(t4, t4_value);
+			if (dirty[0] & /*forecast*/ 1 && t4_value !== (t4_value = /*displayTime*/ ctx[35](/*forecast*/ ctx[0].retrievedAt) + "")) set_data(t4, t4_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -3416,7 +4299,7 @@ function create_fragment(ctx) {
 	let if_block_anchor;
 
 	function select_block_type(ctx, dirty) {
-		if (/*hidden*/ ctx[14]) return create_if_block;
+		if (/*hidden*/ ctx[15]) return create_if_block;
 		return create_else_block;
 	}
 
@@ -3510,6 +4393,8 @@ function instance($$self, $$props, $$invalidate) {
 		threshold = 100;
 
 	let saved = [];
+	let contourOptions = defaultContours(), contourLayer = null;
+	let contourStatus = { loading: false, errors: [], active: [] };
 	let canvas = null, pointer = null, drawRequest = 0;
 	let manifestAbort = null, frameAbort = null, seriesAbort = null;
 
@@ -3552,7 +4437,8 @@ function instance($$self, $$props, $$invalidate) {
 				threshold,
 				field,
 				opacity,
-				saved
+				saved,
+				contourOptions
 			}));
 		} catch {
 			
@@ -3563,6 +4449,7 @@ function instance($$self, $$props, $$invalidate) {
 		try {
 			const p = JSON.parse(localStorage.getItem('geos-dust.preferences.v1') || 'null');
 			if (!p) return;
+			$$invalidate(8, contourOptions = safeContourOptions(p.contourOptions));
 
 			if (p.selected && Number.isFinite(p.selected.lat) && Math.abs(p.selected.lat) <= 90 && Number.isFinite(p.selected.lon)) {
 				$$invalidate(6, selected = {
@@ -3571,15 +4458,15 @@ function instance($$self, $$props, $$invalidate) {
 					lon: wrapLongitude(p.selected.lon)
 				});
 
-				$$invalidate(20, inputLat = selected.lat);
-				$$invalidate(21, inputLon = selected.lon);
+				$$invalidate(21, inputLat = selected.lat);
+				$$invalidate(22, inputLon = selected.lon);
 			}
 
 			if (Number.isFinite(p.threshold) && p.threshold > 0) $$invalidate(7, threshold = p.threshold);
 			if (FIELD_INFO[p.field]) $$invalidate(4, field = p.field);
 			if (Number.isFinite(p.opacity) && p.opacity >= .15 && p.opacity <= 1) $$invalidate(5, opacity = p.opacity);
 
-			$$invalidate(22, saved = Array.isArray(p.saved)
+			$$invalidate(23, saved = Array.isArray(p.saved)
 			? p.saved.filter(v => Number.isFinite(v.lat) && Math.abs(v.lat) <= 90 && Number.isFinite(v.lon)).slice(0, 8)
 			: []);
 		} catch {
@@ -3588,15 +4475,48 @@ function instance($$self, $$props, $$invalidate) {
 	}
 
 	function savePlace() {
-		if (saved.some(p => p.lat === selected.lat && p.lon === selected.lon)) $$invalidate(22, saved = saved.filter(p => p.lat !== selected.lat || p.lon !== selected.lon)); else $$invalidate(22, saved = [...saved.slice(-7), { ...selected }]);
+		if (saved.some(p => p.lat === selected.lat && p.lon === selected.lon)) $$invalidate(23, saved = saved.filter(p => p.lat !== selected.lat || p.lon !== selected.lon)); else $$invalidate(23, saved = [...saved.slice(-7), { ...selected }]);
 		savePreferences();
+	}
+
+	function synopticPreset() {
+		$$invalidate(8, contourOptions = {
+			...contourOptions,
+			gh: {
+				...contourOptions.gh,
+				on: true,
+				level: 500
+			},
+			temp: {
+				...contourOptions.temp,
+				on: true,
+				level: 850
+			},
+			mslp: { ...contourOptions.mslp, on: true }
+		});
+
+		savePreferences();
+	}
+
+	function clearContours() {
+		$$invalidate(8, contourOptions = {
+			...contourOptions,
+			...Object.fromEntries(Object.keys(CONTOUR_FIELDS).map(k => [k, { ...contourOptions[k], on: false }]))
+		});
+
+		savePreferences();
+	}
+
+	function refreshAll() {
+		contourLayer?.refresh();
+		return view === 'forecast' ? load() : refreshSatellite();
 	}
 
 	function cancelSeries() {
 		seriesEpoch++;
 		seriesAbort?.abort();
 		seriesAbort = null;
-		$$invalidate(24, seriesLoading = false);
+		$$invalidate(26, seriesLoading = false);
 	}
 
 	function selectPoint(value) {
@@ -3605,15 +4525,15 @@ function instance($$self, $$props, $$invalidate) {
 		const rawLon = value?.lon ?? value?.lng ?? value?.longitude ?? value?.latlng?.lng;
 
 		if (typeof lat !== 'number' || typeof rawLon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(rawLon) || Math.abs(lat) > 90) {
-			$$invalidate(19, locationError = 'Enter latitude from −90 to 90 and a finite longitude.');
+			$$invalidate(20, locationError = 'Enter latitude from −90 to 90 and a finite longitude.');
 			return;
 		}
 
 		cancelSeries();
-		$$invalidate(23, seriesRows = []);
-		$$invalidate(25, seriesDone = 0);
+		$$invalidate(25, seriesRows = []);
+		$$invalidate(27, seriesDone = 0);
 		const lon = wrapLongitude(rawLon);
-		$$invalidate(19, locationError = '');
+		$$invalidate(20, locationError = '');
 
 		$$invalidate(6, selected = {
 			name: typeof value.name === 'string'
@@ -3623,8 +4543,8 @@ function instance($$self, $$props, $$invalidate) {
 			lon
 		});
 
-		$$invalidate(20, inputLat = lat);
-		$$invalidate(21, inputLon = lon);
+		$$invalidate(21, inputLat = lat);
+		$$invalidate(22, inputLon = lon);
 		if (pointer) map.removeLayer(pointer);
 
 		if (typeof L !== 'undefined') pointer = L.circleMarker([Math.max(-85, Math.min(85, lat)), lon], {
@@ -3645,12 +4565,12 @@ function instance($$self, $$props, $$invalidate) {
 
 	function syncTexture(frame, selectedField) {
 		if (texture) {
-			$$invalidate(49, texture.width = 1, texture);
-			$$invalidate(49, texture.height = 1, texture);
-			$$invalidate(49, texture = null);
+			$$invalidate(52, texture.width = 1, texture);
+			$$invalidate(52, texture.height = 1, texture);
+			$$invalidate(52, texture = null);
 		}
 
-		if (frame) $$invalidate(49, texture = makeTexture(NATIVE_GRID, frame, selectedField));
+		if (frame) $$invalidate(52, texture = makeTexture(NATIVE_GRID, frame, selectedField));
 	}
 
 	function scheduleRender(..._args) {
@@ -3668,12 +4588,12 @@ function instance($$self, $$props, $$invalidate) {
 			height = Math.max(1, size.y);
 
 		if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
-			$$invalidate(52, canvas.width = Math.round(width * ratio), canvas);
-			$$invalidate(52, canvas.height = Math.round(height * ratio), canvas);
+			$$invalidate(57, canvas.width = Math.round(width * ratio), canvas);
+			$$invalidate(57, canvas.height = Math.round(height * ratio), canvas);
 		}
 
-		$$invalidate(52, canvas.style.width = width + 'px', canvas);
-		$$invalidate(52, canvas.style.height = height + 'px', canvas);
+		$$invalidate(57, canvas.style.width = width + 'px', canvas);
+		$$invalidate(57, canvas.style.height = height + 'px', canvas);
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
 		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -3702,6 +4622,8 @@ function instance($$self, $$props, $$invalidate) {
 		} catch {
 			ctx.clearRect(0, 0, width, height);
 		}
+
+		contourLayer?.paint();
 	}
 
 	function stopFrame() {
@@ -3709,8 +4631,8 @@ function instance($$self, $$props, $$invalidate) {
 		frameAbort?.abort();
 		frameAbort = null;
 		frameKey = '';
-		$$invalidate(16, frameLoading = false);
-		$$invalidate(48, activeFrame = null);
+		$$invalidate(17, frameLoading = false);
+		$$invalidate(51, activeFrame = null);
 	}
 
 	async function syncFrame(data, descriptor, on, expired) {
@@ -3725,23 +4647,23 @@ function instance($$self, $$props, $$invalidate) {
 		const epoch = ++frameEpoch, abort = new AbortController();
 		frameAbort = abort;
 		frameKey = key;
-		$$invalidate(18, frameError = '');
-		$$invalidate(16, frameLoading = true);
+		$$invalidate(19, frameError = '');
+		$$invalidate(17, frameLoading = true);
 
 		try {
 			const frame = await native.get(data, descriptor, abort.signal);
-			if (!destroyed && epoch === frameEpoch && enabled && view === 'forecast') $$invalidate(48, activeFrame = frame);
+			if (!destroyed && epoch === frameEpoch && enabled && view === 'forecast') $$invalidate(51, activeFrame = frame);
 		} catch(err) {
 			if (destroyed || epoch !== frameEpoch) return;
 
-			$$invalidate(18, frameError = err?.name === 'AbortError'
+			$$invalidate(19, frameError = err?.name === 'AbortError'
 			? 'Native forecast request timed out or was cancelled.'
 			: String(err?.message || err));
 
 			frameKey = '';
-			$$invalidate(48, activeFrame = null);
+			$$invalidate(51, activeFrame = null);
 		} finally {
-			if (epoch === frameEpoch) $$invalidate(16, frameLoading = false);
+			if (epoch === frameEpoch) $$invalidate(17, frameLoading = false);
 		}
 	}
 
@@ -3750,11 +4672,11 @@ function instance($$self, $$props, $$invalidate) {
 		const abort = new AbortController();
 		manifestAbort = abort;
 		const epoch = ++manifestEpoch;
-		$$invalidate(15, loading = true);
-		$$invalidate(17, error = '');
-		$$invalidate(18, frameError = '');
+		$$invalidate(16, loading = true);
+		$$invalidate(18, error = '');
+		$$invalidate(19, frameError = '');
 		cancelSeries();
-		$$invalidate(23, seriesRows = []);
+		$$invalidate(25, seriesRows = []);
 		const timeout = setTimeout(() => abort.abort(), 20000);
 
 		try {
@@ -3767,11 +4689,11 @@ function instance($$self, $$props, $$invalidate) {
 			if (destroyed || epoch !== manifestEpoch || !enabled) return;
 			stopFrame();
 			$$invalidate(0, forecast = product);
-			$$invalidate(51, now = Date.now());
+			$$invalidate(55, now = Date.now());
 		} catch(err) {
 			if (destroyed || epoch !== manifestEpoch) return;
 
-			$$invalidate(17, error = err?.name === 'AbortError'
+			$$invalidate(18, error = err?.name === 'AbortError'
 			? 'Forecast request timed out.'
 			: String(err?.message || err));
 
@@ -3779,7 +4701,7 @@ function instance($$self, $$props, $$invalidate) {
 			stopFrame();
 		} finally {
 			clearTimeout(timeout);
-			if (epoch === manifestEpoch) $$invalidate(15, loading = false);
+			if (epoch === manifestEpoch) $$invalidate(16, loading = false);
 		}
 	}
 
@@ -3789,9 +4711,9 @@ function instance($$self, $$props, $$invalidate) {
 		const epoch = ++seriesEpoch, abort = new AbortController();
 		seriesAbort = abort;
 		const product = forecast, point = { ...selected };
-		$$invalidate(23, seriesRows = product.frames.map(d => ({ ...d, value: null, state: 'pending' })));
-		$$invalidate(25, seriesDone = 0);
-		$$invalidate(24, seriesLoading = true);
+		$$invalidate(25, seriesRows = product.frames.map(d => ({ ...d, value: null, state: 'pending' })));
+		$$invalidate(27, seriesDone = 0);
+		$$invalidate(26, seriesLoading = true);
 		let next = 0;
 
 		const worker = async () => {
@@ -3809,7 +4731,7 @@ function instance($$self, $$props, $$invalidate) {
 				if (abort.signal.aborted || epoch !== seriesEpoch || destroyed) return;
 
 				$$invalidate(
-					23,
+					25,
 					seriesRows[index] = {
 						...seriesRows[index],
 						value,
@@ -3818,13 +4740,13 @@ function instance($$self, $$props, $$invalidate) {
 					seriesRows
 				);
 
-				$$invalidate(23, seriesRows = [...seriesRows]);
-				$$invalidate(25, seriesDone++, seriesDone);
+				$$invalidate(25, seriesRows = [...seriesRows]);
+				$$invalidate(27, seriesDone++, seriesDone);
 			}
 		};
 
 		await Promise.all([worker(), worker()]);
-		if (epoch === seriesEpoch) $$invalidate(24, seriesLoading = false);
+		if (epoch === seriesEpoch) $$invalidate(26, seriesLoading = false);
 	}
 
 	function cancelSatellite() {
@@ -3833,48 +4755,48 @@ function instance($$self, $$props, $$invalidate) {
 		satMetaAbort?.abort();
 		satAbort?.abort();
 		clearTimeout(satelliteTimer);
-		$$invalidate(27, satLoading = false);
-		$$invalidate(28, satMetaLoading = false);
+		$$invalidate(29, satLoading = false);
+		$$invalidate(30, satMetaLoading = false);
 		closeSatellite(satFrame);
-		$$invalidate(53, satFrame = null);
+		$$invalidate(58, satFrame = null);
 	}
 
 	async function refreshSatellite() {
 		if (!mounted || !enabled || view !== 'satellite') return;
 		satEpoch++;
 		satAbort?.abort();
-		$$invalidate(27, satLoading = false);
+		$$invalidate(29, satLoading = false);
 		closeSatellite(satFrame);
-		$$invalidate(53, satFrame = null);
+		$$invalidate(58, satFrame = null);
 		satMetaAbort?.abort();
 		const abort = new AbortController();
 		satMetaAbort = abort;
 		const epoch = ++satMetaEpoch, source = satSource;
-		$$invalidate(28, satMetaLoading = true);
-		$$invalidate(26, satError = '');
+		$$invalidate(30, satMetaLoading = true);
+		$$invalidate(28, satError = '');
 		const timeout = setTimeout(() => abort.abort(), 20000);
 
 		try {
 			const metadata = await satelliteMetadata(source, abort.signal);
 			clearTimeout(timeout);
 			if (destroyed || epoch !== satMetaEpoch || source !== satSource || view !== 'satellite') return;
-			$$invalidate(10, satMeta = metadata);
-			$$invalidate(51, now = Date.now());
-			if (followLatest || !satTime) $$invalidate(9, satTime = metadata.latest);
+			$$invalidate(11, satMeta = metadata);
+			$$invalidate(55, now = Date.now());
+			if (followLatest || !satTime) $$invalidate(10, satTime = metadata.latest);
 			await requestSatellite();
 		} catch(err) {
 			if (destroyed || epoch !== satMetaEpoch) return;
 
-			$$invalidate(26, satError = err?.name === 'AbortError'
+			$$invalidate(28, satError = err?.name === 'AbortError'
 			? 'Satellite metadata request timed out.'
 			: String(err?.message || err));
 
-			$$invalidate(10, satMeta = null);
+			$$invalidate(11, satMeta = null);
 			closeSatellite(satFrame);
-			$$invalidate(53, satFrame = null);
+			$$invalidate(58, satFrame = null);
 		} finally {
 			clearTimeout(timeout);
-			if (epoch === satMetaEpoch) $$invalidate(28, satMetaLoading = false);
+			if (epoch === satMetaEpoch) $$invalidate(30, satMetaLoading = false);
 		}
 	}
 
@@ -3884,12 +4806,12 @@ function instance($$self, $$props, $$invalidate) {
 		const abort = new AbortController();
 		satAbort = abort;
 		const epoch = ++satEpoch, source = satSource, time = satTime;
-		$$invalidate(27, satLoading = true);
-		$$invalidate(26, satError = '');
+		$$invalidate(29, satLoading = true);
+		$$invalidate(28, satError = '');
 
 		if (satFrame && (satFrame.source !== source || satFrame.time !== time)) {
 			closeSatellite(satFrame);
-			$$invalidate(53, satFrame = null);
+			$$invalidate(58, satFrame = null);
 		}
 
 		const b = map.getBounds(),
@@ -3916,20 +4838,20 @@ function instance($$self, $$props, $$invalidate) {
 			}
 
 			const previous = satFrame;
-			$$invalidate(53, satFrame = frame);
+			$$invalidate(58, satFrame = frame);
 			closeSatellite(previous);
 		} catch(err) {
 			if (destroyed || epoch !== satEpoch) return;
 
-			$$invalidate(26, satError = err?.name === 'AbortError'
+			$$invalidate(28, satError = err?.name === 'AbortError'
 			? 'Satellite image request timed out.'
 			: String(err?.message || err));
 
 			closeSatellite(satFrame);
-			$$invalidate(53, satFrame = null);
+			$$invalidate(58, satFrame = null);
 		} finally {
 			clearTimeout(timeout);
-			if (epoch === satEpoch) $$invalidate(27, satLoading = false);
+			if (epoch === satEpoch) $$invalidate(29, satLoading = false);
 		}
 	}
 
@@ -3944,16 +4866,16 @@ function instance($$self, $$props, $$invalidate) {
 
 	function changeSatellite() {
 		cancelSatellite();
-		$$invalidate(10, satMeta = null);
-		$$invalidate(9, satTime = '');
-		$$invalidate(29, followLatest = true);
+		$$invalidate(11, satMeta = null);
+		$$invalidate(10, satTime = '');
+		$$invalidate(31, followLatest = true);
 		void refreshSatellite();
 	}
 
 	function setView(next) {
 		$$invalidate(3, view = next);
 		cancelSeries();
-		$$invalidate(23, seriesRows = []);
+		$$invalidate(25, seriesRows = []);
 
 		if (view === 'satellite') {
 			stopFrame();
@@ -3972,7 +4894,7 @@ function instance($$self, $$props, $$invalidate) {
 			release(config.name, 'high');
 			manifestEpoch++;
 			manifestAbort?.abort();
-			$$invalidate(15, loading = false);
+			$$invalidate(16, loading = false);
 			stopFrame();
 			cancelSeries();
 			cancelSatellite();
@@ -3985,16 +4907,25 @@ function instance($$self, $$props, $$invalidate) {
 	}
 
 	const onopen = params => {
-		$$invalidate(14, hidden = false);
+		$$invalidate(15, hidden = false);
 		if (enabled) register(config.name, 'high');
 		if (params) selectPoint(params);
 	};
 
 	onMount(() => {
-		mounted = true;
+		$$invalidate(53, mounted = true);
 		restorePreferences();
-		$$invalidate(52, canvas = document.createElement('canvas'));
-		$$invalidate(52, canvas.dataset.geosDust = 'map', canvas);
+
+		$$invalidate(56, contourLayer = new ContourOverlay({
+				map,
+				onChange: value => {
+					$$invalidate(24, contourStatus = value);
+				},
+				onRender: scheduleRender
+			}));
+
+		$$invalidate(57, canvas = document.createElement('canvas'));
+		$$invalidate(57, canvas.dataset.geosDust = 'map', canvas);
 
 		Object.assign(canvas.style, {
 			position: 'absolute',
@@ -4008,10 +4939,10 @@ function instance($$self, $$props, $$invalidate) {
 		map.getContainer().appendChild(canvas);
 		singleclick.on(config.name, selectPoint);
 		register(config.name, 'high');
-		$$invalidate(50, timestamp = Number(store.get('timestamp')) || Date.now());
+		$$invalidate(54, timestamp = Number(store.get('timestamp')) || Date.now());
 
 		timestampListener = store.on('timestamp', () => {
-			$$invalidate(50, timestamp = Number(store.get('timestamp')));
+			$$invalidate(54, timestamp = Number(store.get('timestamp')));
 		});
 
 		map.on('move', scheduleRender);
@@ -4027,16 +4958,14 @@ function instance($$self, $$props, $$invalidate) {
 
 		timer = setInterval(
 			() => {
-				$$invalidate(51, now = Date.now());
+				$$invalidate(55, now = Date.now());
 			},
 			60000
 		);
 
 		refreshTimer = setInterval(
 			() => {
-				if (enabled && !document.hidden && !loading) {
-					if (view === 'satellite') void refreshSatellite(); else void load();
-				}
+				if (enabled && !document.hidden && !loading) void refreshAll();
 			},
 			5 * 60000
 		);
@@ -4046,24 +4975,26 @@ function instance($$self, $$props, $$invalidate) {
 
 	onDestroy(() => {
 		destroyed = true;
-		mounted = false;
+		$$invalidate(53, mounted = false);
 		manifestEpoch++;
 		manifestAbort?.abort();
 		stopFrame();
 		cancelSeries();
 		cancelSatellite();
 		native.destroy();
+		contourLayer?.destroy();
+		$$invalidate(56, contourLayer = null);
 		clearInterval(timer);
 		clearInterval(refreshTimer);
 		if (drawRequest) cancelAnimationFrame(drawRequest);
 		resizeObserver?.disconnect();
 		canvas?.remove();
-		$$invalidate(52, canvas = null);
+		$$invalidate(57, canvas = null);
 
 		if (texture) {
-			$$invalidate(49, texture.width = 1, texture);
-			$$invalidate(49, texture.height = 1, texture);
-			$$invalidate(49, texture = null);
+			$$invalidate(52, texture.width = 1, texture);
+			$$invalidate(52, texture.height = 1, texture);
+			$$invalidate(52, texture = null);
 		}
 
 		map.off('move', scheduleRender);
@@ -4078,8 +5009,8 @@ function instance($$self, $$props, $$invalidate) {
 	});
 
 	const func = p => p.name === selected.name;
-	const click_handler = () => $$invalidate(14, hidden = false);
-	const click_handler_1 = () => $$invalidate(14, hidden = true);
+	const click_handler = () => $$invalidate(15, hidden = false);
+	const click_handler_1 = () => $$invalidate(15, hidden = true);
 	const click_handler_2 = () => setView('forecast');
 	const click_handler_3 = () => setView('satellite');
 
@@ -4088,13 +5019,38 @@ function instance($$self, $$props, $$invalidate) {
 		$$invalidate(1, enabled);
 	}
 
+	function input0_change_handler_1(key) {
+		contourOptions[key].on = this.checked;
+		$$invalidate(8, contourOptions);
+	}
+
+	function select_change_handler(key) {
+		contourOptions[key].level = select_value(this);
+		$$invalidate(8, contourOptions);
+	}
+
+	function select_change_handler_1(key) {
+		contourOptions[key].step = select_value(this);
+		$$invalidate(8, contourOptions);
+	}
+
+	function input1_input_handler(key) {
+		contourOptions[key].color = this.value;
+		$$invalidate(8, contourOptions);
+	}
+
+	function input1_change_handler() {
+		contourOptions.labels = this.checked;
+		$$invalidate(8, contourOptions);
+	}
+
 	const func_1 = p => !places.some(v => v.name === p.name);
 
-	function select_change_handler() {
+	function select_change_handler_2() {
 		selected.name = select_value(this);
 		$$invalidate(6, selected);
-		$$invalidate(22, saved);
-		$$invalidate(32, places);
+		$$invalidate(23, saved);
+		$$invalidate(34, places);
 	}
 
 	const change_handler = e => {
@@ -4106,24 +5062,24 @@ function instance($$self, $$props, $$invalidate) {
 		}
 	};
 
-	function input1_input_handler() {
+	function input2_input_handler() {
 		inputLat = to_number(this.value);
-		$$invalidate(20, inputLat);
+		$$invalidate(21, inputLat);
 	}
 
-	function input2_input_handler() {
+	function input3_input_handler() {
 		inputLon = to_number(this.value);
-		$$invalidate(21, inputLon);
+		$$invalidate(22, inputLon);
 	}
 
 	const func_2 = p => p.lat === selected.lat && p.lon === selected.lon;
 
-	function select_change_handler_1() {
+	function select_change_handler_3() {
 		field = select_value(this);
 		$$invalidate(4, field);
 	}
 
-	function input0_change_handler_1() {
+	function input0_change_handler_2() {
 		showDust = this.checked;
 		$$invalidate(2, showDust);
 	}
@@ -4138,66 +5094,68 @@ function instance($$self, $$props, $$invalidate) {
 
 	function select0_change_handler() {
 		satSource = select_value(this);
-		$$invalidate(8, satSource);
+		$$invalidate(9, satSource);
 	}
 
 	function select1_change_handler() {
 		satTime = select_value(this);
-		$$invalidate(9, satTime);
-		$$invalidate(10, satMeta);
+		$$invalidate(10, satTime);
+		$$invalidate(11, satMeta);
 	}
 
 	const change_handler_1 = () => {
-		$$invalidate(29, followLatest = false);
+		$$invalidate(31, followLatest = false);
 		void requestSatellite();
 	};
 
 	const click_handler_6 = () => {
-		$$invalidate(29, followLatest = true);
-		$$invalidate(9, satTime = satMeta.latest);
+		$$invalidate(31, followLatest = true);
+		$$invalidate(10, satTime = satMeta.latest);
 		void requestSatellite();
 	};
 
-	function input3_change_input_handler() {
+	function input4_change_input_handler() {
 		opacity = to_number(this.value);
 		$$invalidate(5, opacity);
 	}
 
-	const click_handler_7 = () => view === 'forecast' ? load() : refreshSatellite();
-
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty[0] & /*forecast*/ 1 | $$self.$$.dirty[1] & /*now*/ 1048576) {
-			$$invalidate(11, stale = !!forecast && (now - Date.parse(forecast.runTime) > MAX_RUN_AGE_MS || Date.parse(forecast.frames.at(-1).end) <= now));
+		if ($$self.$$.dirty[0] & /*forecast*/ 1 | $$self.$$.dirty[1] & /*now*/ 16777216) {
+			$$invalidate(12, stale = !!forecast && (now - Date.parse(forecast.runTime) > MAX_RUN_AGE_MS || Date.parse(forecast.frames.at(-1).end) <= now));
 		}
 
-		if ($$self.$$.dirty[0] & /*enabled, stale, forecast*/ 2051 | $$self.$$.dirty[1] & /*timestamp*/ 524288) {
-			$$invalidate(12, desired = enabled && !stale ? frameAt(forecast, timestamp) : null);
+		if ($$self.$$.dirty[0] & /*enabled, stale, forecast*/ 4099 | $$self.$$.dirty[1] & /*timestamp*/ 8388608) {
+			$$invalidate(13, desired = enabled && !stale ? frameAt(forecast, timestamp) : null);
 		}
 
-		if ($$self.$$.dirty[0] & /*forecast, desired, enabled, view, stale*/ 6155) {
+		if ($$self.$$.dirty[0] & /*forecast, desired, enabled, view, stale*/ 12299) {
 			void syncFrame(forecast, desired, enabled && view === 'forecast', stale);
 		}
 
-		if ($$self.$$.dirty[0] & /*desired, selected*/ 4160 | $$self.$$.dirty[1] & /*activeFrame*/ 131072) {
-			$$invalidate(13, sample = desired && activeFrame && activeFrame.validTime === desired.validTime
+		if ($$self.$$.dirty[0] & /*desired, selected*/ 8256 | $$self.$$.dirty[1] & /*activeFrame*/ 1048576) {
+			$$invalidate(14, sample = desired && activeFrame && activeFrame.validTime === desired.validTime
 			? samplePoint(NATIVE_GRID, activeFrame, selected.lat, selected.lon)
 			: null);
 		}
 
-		if ($$self.$$.dirty[0] & /*field*/ 16 | $$self.$$.dirty[1] & /*activeFrame*/ 131072) {
+		if ($$self.$$.dirty[0] & /*field*/ 16 | $$self.$$.dirty[1] & /*activeFrame*/ 1048576) {
 			syncTexture(activeFrame, field);
 		}
 
-		if ($$self.$$.dirty[0] & /*sample, threshold*/ 8320) {
-			$$invalidate(31, guidance = thresholdState(sample?.dustSurface ?? null, threshold));
+		if ($$self.$$.dirty[0] & /*sample, threshold*/ 16512) {
+			$$invalidate(33, guidance = thresholdState(sample?.dustSurface ?? null, threshold));
 		}
 
-		if ($$self.$$.dirty[0] & /*satMeta, satSource*/ 1280 | $$self.$$.dirty[1] & /*now*/ 1048576) {
-			$$invalidate(30, satDelayed = !!satMeta && now - Date.parse(satMeta.latest) > SATELLITES[satSource].maxAge);
+		if ($$self.$$.dirty[0] & /*satMeta, satSource*/ 2560 | $$self.$$.dirty[1] & /*now*/ 16777216) {
+			$$invalidate(32, satDelayed = !!satMeta && now - Date.parse(satMeta.latest) > SATELLITES[satSource].maxAge);
 		}
 
-		if ($$self.$$.dirty[0] & /*enabled, showDust, stale, desired, view, satTime, satSource, opacity*/ 6958 | $$self.$$.dirty[1] & /*canvas, texture, satFrame*/ 6553600) {
+		if ($$self.$$.dirty[0] & /*enabled, showDust, stale, desired, view, satTime, satSource, opacity*/ 13870 | $$self.$$.dirty[1] & /*canvas, texture, satFrame*/ 203423744) {
 			if (canvas) scheduleRender(texture, enabled, showDust, stale, desired, view, satFrame, satTime, satSource, opacity);
+		}
+
+		if ($$self.$$.dirty[0] & /*contourOptions, enabled*/ 258 | $$self.$$.dirty[1] & /*mounted, contourLayer, timestamp*/ 46137344) {
+			if (mounted && contourLayer) contourLayer.set(contourOptions, timestamp, enabled);
 		}
 	};
 
@@ -4210,6 +5168,7 @@ function instance($$self, $$props, $$invalidate) {
 		opacity,
 		selected,
 		threshold,
+		contourOptions,
 		satSource,
 		satTime,
 		satMeta,
@@ -4225,6 +5184,7 @@ function instance($$self, $$props, $$invalidate) {
 		inputLat,
 		inputLon,
 		saved,
+		contourStatus,
 		seriesRows,
 		seriesLoading,
 		seriesDone,
@@ -4239,12 +5199,13 @@ function instance($$self, $$props, $$invalidate) {
 		format,
 		savePreferences,
 		savePlace,
+		synopticPreset,
+		clearContours,
+		refreshAll,
 		cancelSeries,
 		selectPoint,
 		goToCoordinates,
-		load,
 		loadSeries,
-		refreshSatellite,
 		requestSatellite,
 		changeSatellite,
 		setView,
@@ -4252,8 +5213,10 @@ function instance($$self, $$props, $$invalidate) {
 		onopen,
 		activeFrame,
 		texture,
+		mounted,
 		timestamp,
 		now,
+		contourLayer,
 		canvas,
 		satFrame,
 		func,
@@ -4262,14 +5225,19 @@ function instance($$self, $$props, $$invalidate) {
 		click_handler_2,
 		click_handler_3,
 		input0_change_handler,
-		func_1,
-		select_change_handler,
-		change_handler,
-		input1_input_handler,
-		input2_input_handler,
-		func_2,
-		select_change_handler_1,
 		input0_change_handler_1,
+		select_change_handler,
+		select_change_handler_1,
+		input1_input_handler,
+		input1_change_handler,
+		func_1,
+		select_change_handler_2,
+		change_handler,
+		input2_input_handler,
+		input3_input_handler,
+		func_2,
+		select_change_handler_3,
+		input0_change_handler_2,
 		input1_input_handler_1,
 		click_handler_4,
 		click_handler_5,
@@ -4277,19 +5245,18 @@ function instance($$self, $$props, $$invalidate) {
 		select1_change_handler,
 		change_handler_1,
 		click_handler_6,
-		input3_change_input_handler,
-		click_handler_7
+		input4_change_input_handler
 	];
 }
 
 class PluginEntry extends SvelteComponent {
 	constructor(options) {
 		super();
-		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 47 }, add_css, [-1, -1, -1, -1]);
+		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 50 }, add_css, [-1, -1, -1, -1, -1]);
 	}
 
 	get onopen() {
-		return this.$$.ctx[47];
+		return this.$$.ctx[50];
 	}
 }
 
