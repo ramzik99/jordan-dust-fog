@@ -30,10 +30,15 @@ let scenarios = 0, activePage;
 try {
   for (const viewport of [{ width: 1365, height: 1000 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport });
-    const page = await context.newPage(), errors = []; activePage = page; let satFail = false, manifestFail = false;
+    const page = await context.newPage(), errors = []; activePage = page; let satFail = false, manifestFail = false, contourFail = '';
     page.on('pageerror', error => { errors.push(String(error)); console.error('Page error:', String(error)); });
     page.on('console', msg => { if (msg.type() === 'error') console.error('Browser console:', msg.text()); });
     page.on('requestfailed', request => console.error('Failed request:', request.url(), request.failure()?.errorText));
+    await page.route('https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/**', async route => {
+      const path=new URL(route.request().url()).pathname.split('/contours/')[1];
+      if(contourFail && path.includes('/'+contourFail+'-')) { await route.fulfill({status:503,body:'Unavailable',headers:{'Access-Control-Allow-Origin':'*'}});return; }
+      await route.fulfill({contentType:path.endsWith('.gz')?'application/gzip':'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:await readFile(new URL('test-fixture/contours/'+path,root))});
+    });
     await page.route('https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-dust-data/global/**', async route => {
       const path = new URL(route.request().url()).pathname.split('/global/')[1];
       if (manifestFail && path === 'latest.json') { await route.fulfill({ status: 503, body: 'Unavailable', headers: { 'Access-Control-Allow-Origin': '*' } }); return; }
@@ -52,6 +57,32 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     const value = page.getByTestId('point-value');
     await value.filter({ hasText: '40.0' }).waitFor(); scenarios++;
+    assert.equal(await page.locator('[data-synoptic-contours]').count(),1);
+    await page.getByText('Weather isolines',{exact:true}).click();
+    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();
+    const activeContours=expected=>page.waitForFunction(expected=>document.querySelector('[data-synoptic-contours]')?.dataset.layers===expected,expected);
+    await activeContours('gh:500,mslp:0,temp:850');
+    for(const name of ['Geopotential height','Temperature','MSLP']) assert.equal(await page.getByLabel(name+' isolines',{exact:true}).isChecked(),true);
+    assert.equal(await page.evaluate(()=>{const c=document.querySelector('[data-synoptic-contours]');return c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)}),true);scenarios++;
+    await page.getByLabel('Geopotential height isolines',{exact:true}).uncheck(); await activeContours('mslp:0,temp:850');
+    await page.getByLabel('Geopotential height isolines',{exact:true}).check();await activeContours('gh:500,mslp:0,temp:850');scenarios++;
+    await page.getByLabel('Geopotential height pressure level',{exact:true}).selectOption('700');await activeContours('gh:700,mslp:0,temp:850');
+    await page.getByLabel('Geopotential height contour spacing',{exact:true}).selectOption('12');
+    await page.getByLabel('Contour labels',{exact:true}).uncheck();await page.getByLabel('Contour labels',{exact:true}).check();await activeContours('gh:700,mslp:0,temp:850');scenarios++;
+    await page.getByLabel('Geopotential height contour color',{exact:true}).evaluate(el=>{el.value='#ff00ff';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+    await activeContours('gh:700,mslp:0,temp:850');scenarios++;
+    contourFail='temp';await page.getByLabel('Temperature pressure level',{exact:true}).selectOption('300');
+    await page.getByRole('alert').filter({hasText:'Temperature: HTTP 503'}).waitFor();await activeContours('gh:700,mslp:0');scenarios++;
+    contourFail='';await page.getByRole('button',{name:'Refresh',exact:true}).click();await activeContours('gh:700,mslp:0,temp:300');
+    await page.getByTestId('contour-time').waitFor();scenarios++;
+    await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames[1].end)+10800000);
+    await page.getByRole('alert').filter({hasText:'No contour snapshot within 90 minutes'}).waitFor();await activeContours('');
+    await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames[0].validTime));await activeContours('gh:700,mslp:0,temp:300');await value.filter({hasText:'40.0'}).waitFor();scenarios++;
+    await page.locator('.panel').evaluate(el=>el.scrollTop=0);
+    await page.screenshot({path:`test-output/contours-${viewport.width}.png`});
+    await page.getByRole('button',{name:'Clear contours',exact:true}).click();await activeContours('');scenarios++;
+    await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await activeContours('gh:500,mslp:0,temp:850');
+    await page.getByText('Weather isolines',{exact:true}).click();
     assert.match(await page.getByTestId('threshold-state').innerText(), /Below/);
     await page.getByLabel('Dust threshold').fill('30');
     await page.getByLabel('Dust threshold').dispatchEvent('change');
@@ -96,13 +127,14 @@ try {
     await page.getByRole('alert').filter({ hasText: 'Satellite metadata unavailable' }).waitFor();
     await page.waitForFunction(() => { const c=document.querySelector('[data-geos-dust]');return c.getContext('2d').getImageData(c.width-5,c.height/2,1,1).data[3]===0; }); scenarios++;
     await page.getByRole('button', { name: 'Forecast', exact: true }).click(); await value.filter({ hasText: '40.0' }).waitFor();
-    await page.getByLabel('Enable plugin').uncheck(); await value.filter({ hasText: 'Unavailable' }).waitFor();
-    await page.getByLabel('Enable plugin').check(); await value.filter({ hasText: '40.0' }).waitFor(); scenarios++;
-    await page.getByRole('button', { name: 'Minimize panel' }).click(); await page.getByRole('button', { name: /Dust forecast/ }).click();
+    await page.getByLabel('Enable plugin').uncheck(); await value.filter({ hasText: 'Unavailable' }).waitFor();await activeContours('');
+    await page.getByLabel('Enable plugin').check(); await value.filter({ hasText: '40.0' }).waitFor();await activeContours('gh:500,mslp:0,temp:850');scenarios++;
+    await page.getByRole('button', { name: 'Minimize panel' }).click(); await page.getByRole('button', { name: /Synoptic Atlas/ }).click();
     manifestFail = true; await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'GEOS forecast unavailable' }).waitFor(); await value.filter({ hasText: 'Unavailable' }).waitFor(); scenarios++;
     await page.evaluate(() => testPlugin.$destroy());
     assert.equal(await page.locator('[data-geos-dust]').count(), 0);
+    assert.equal(await page.locator('[data-synoptic-contours]').count(),0);
     assert.equal(await page.evaluate(() => testHost.listeners.size + testHost.clicks.size + [...testHost.events.values()].reduce((n, set) => n + set.size, 0)), 0);
     assert.deepEqual(errors, []); scenarios++; await context.close();
   }

@@ -8,6 +8,7 @@
   import { DATA_BASE, NATIVE_GRID, NativeForecast, validateDustManifest } from './nativeDust.mjs';
   import { FIELD_INFO, PALETTE, makeTexture, drawTexture, thresholdState } from './dustDisplay.mjs';
   import { SATELLITES, satelliteMetadata, satelliteFrame, closeSatellite, drawSatellite } from './satellite.mjs';
+  import { ContourOverlay, CONTOUR_FIELDS, PRESSURE_LEVELS, defaultContours, safeContourOptions } from './contours.mjs';
   declare const L: any;
   const places = [
     { name: 'Amman', lat: 31.95, lon: 35.93 }, { name: 'Fuheis', lat: 32.01, lon: 35.77 },
@@ -21,6 +22,8 @@
   let error = '', frameError = '', locationError = '', timestamp = Date.now(), now = Date.now();
   let selected = places[0], inputLat = selected.lat, inputLon = selected.lon, threshold = 100;
   let saved: any[] = [];
+  let contourOptions: any = defaultContours(), contourLayer: any = null;
+  let contourStatus: any = { loading: false, errors: [], active: [] };
   let canvas: HTMLCanvasElement | null = null, pointer: any = null, drawRequest = 0;
   let manifestAbort: AbortController | null = null, frameAbort: AbortController | null = null, seriesAbort: AbortController | null = null;
   let manifestEpoch = 0, frameEpoch = 0, seriesEpoch = 0, frameKey = '', seriesRows: any[] = [], seriesLoading = false, seriesDone = 0;
@@ -41,14 +44,16 @@
   $: guidance = thresholdState(sample?.dustSurface ?? null, threshold);
   $: satDelayed = !!satMeta && now - Date.parse(satMeta.latest) > SATELLITES[satSource].maxAge;
   $: if (canvas) scheduleRender(texture, enabled, showDust, stale, desired, view, satFrame, satTime, satSource, opacity);
+  $: if (mounted && contourLayer) contourLayer.set(contourOptions, timestamp, enabled);
 
   function savePreferences() {
-    try { localStorage.setItem('geos-dust.preferences.v1', JSON.stringify({ selected, threshold, field, opacity, saved })); } catch {}
+    try { localStorage.setItem('geos-dust.preferences.v1', JSON.stringify({ selected, threshold, field, opacity, saved, contourOptions })); } catch {}
   }
   function restorePreferences() {
     try {
       const p = JSON.parse(localStorage.getItem('geos-dust.preferences.v1') || 'null');
       if (!p) return;
+      contourOptions = safeContourOptions(p.contourOptions);
       if (p.selected && Number.isFinite(p.selected.lat) && Math.abs(p.selected.lat) <= 90 && Number.isFinite(p.selected.lon)) {
         selected = { name: String(p.selected.name || 'Saved location').slice(0, 80), lat: p.selected.lat, lon: wrapLongitude(p.selected.lon) };
         inputLat = selected.lat; inputLon = selected.lon;
@@ -64,6 +69,16 @@
     else saved = [...saved.slice(-7), { ...selected }];
     savePreferences();
   }
+  function synopticPreset() {
+    contourOptions = { ...contourOptions, gh: { ...contourOptions.gh, on: true, level: 500 },
+      temp: { ...contourOptions.temp, on: true, level: 850 }, mslp: { ...contourOptions.mslp, on: true } };
+    savePreferences();
+  }
+  function clearContours() {
+    contourOptions = { ...contourOptions, ...Object.fromEntries(Object.keys(CONTOUR_FIELDS).map(k => [k, { ...contourOptions[k], on: false }])) };
+    savePreferences();
+  }
+  function refreshAll() { contourLayer?.refresh(); return view === 'forecast' ? load() : refreshSatellite(); }
   function cancelSeries() { seriesEpoch++; seriesAbort?.abort(); seriesAbort = null; seriesLoading = false; }
   function selectPoint(value: any) {
     if (!enabled) return;
@@ -102,6 +117,7 @@
       if (view === 'satellite') drawSatellite(ctx, map, enabled && satFrame?.source === satSource && satFrame?.time === satTime ? satFrame : null, width, height, opacity);
       else drawTexture(ctx, map, NATIVE_GRID, enabled && showDust && !stale && desired && activeFrame?.validTime === desired.validTime ? texture : null, width, height, opacity);
     } catch { ctx.clearRect(0, 0, width, height); }
+    contourLayer?.paint();
   }
   function stopFrame() { frameEpoch++; frameAbort?.abort(); frameAbort = null; frameKey = ''; frameLoading = false; activeFrame = null; }
   async function syncFrame(data: any, descriptor: any, on: boolean, expired: boolean) {
@@ -217,6 +233,7 @@
   export const onopen = (params: unknown) => { hidden = false; if (enabled) register(config.name, 'high'); if (params) selectPoint(params); };
   onMount(() => {
     mounted = true; restorePreferences();
+    contourLayer = new ContourOverlay({ map, onChange: value => { contourStatus = value; }, onRender: scheduleRender });
     canvas = document.createElement('canvas'); canvas.dataset.geosDust = 'map';
     Object.assign(canvas.style, { position: 'absolute', left: '0', top: '0', pointerEvents: 'none', zIndex: '390' });
     canvas.setAttribute('aria-hidden', 'true'); map.getContainer().appendChild(canvas);
@@ -226,11 +243,12 @@
     map.on('move', scheduleRender); map.on('zoom', scheduleRender); map.on('moveend', mapFinished); map.on('zoomend', mapFinished); map.on('resize', mapFinished);
     if (typeof ResizeObserver !== 'undefined') { resizeObserver = new ResizeObserver(mapFinished); resizeObserver.observe(map.getContainer()); }
     timer = setInterval(() => { now = Date.now(); }, 60000);
-    refreshTimer = setInterval(() => { if (enabled && !document.hidden && !loading) { if (view === 'satellite') void refreshSatellite(); else void load(); } }, 5 * 60000);
+    refreshTimer = setInterval(() => { if (enabled && !document.hidden && !loading) void refreshAll(); }, 5 * 60000);
     void load();
   });
   onDestroy(() => {
     destroyed = true; mounted = false; manifestEpoch++; manifestAbort?.abort(); stopFrame(); cancelSeries(); cancelSatellite(); native.destroy();
+    contourLayer?.destroy(); contourLayer = null;
     clearInterval(timer); clearInterval(refreshTimer); if (drawRequest) cancelAnimationFrame(drawRequest); resizeObserver?.disconnect();
     canvas?.remove(); canvas = null; if (texture) { texture.width = 1; texture.height = 1; texture = null; }
     map.off('move', scheduleRender); map.off('zoom', scheduleRender); map.off('moveend', mapFinished); map.off('zoomend', mapFinished); map.off('resize', mapFinished);
@@ -240,11 +258,34 @@
 </script>
 
 {#if hidden}
-  <button class="restore" on:click={() => hidden = false}>🌫 Dust forecast</button>
+  <button class="restore" on:click={() => hidden = false}>🌫 Synoptic Atlas</button>
 {:else}
-  <section class="panel" aria-label="Dust forecast">
-    <header><div><strong>Dust forecast</strong><small>NASA GEOS-FP · v1.0.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
+  <section class="panel" aria-label="Synoptic Atlas">
+    <header><div><strong>Synoptic Atlas</strong><small>NASA GEOS-FP · v1.1.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
     <nav aria-label="Dust view"><button class:active={view === 'forecast'} on:click={() => setView('forecast')}>Forecast</button><button class:active={view === 'satellite'} on:click={() => setView('satellite')}>Satellite</button><label><input aria-label="Enable plugin" type="checkbox" bind:checked={enabled} on:change={toggleEnabled} />On</label></nav>
+    <details class="contour-controls"><summary>Weather isolines</summary>
+      <div class="contour-presets"><button on:click={synopticPreset} disabled={!enabled}>Synoptic preset</button><button on:click={clearContours}>Clear contours</button></div>
+      {#each Object.keys(CONTOUR_FIELDS) as key}
+        <div class="contour-row">
+          <label class="contour-check"><input aria-label={CONTOUR_FIELDS[key].label + ' isolines'} type="checkbox" bind:checked={contourOptions[key].on} on:change={savePreferences} disabled={!enabled} /><span style={'color:' + contourOptions[key].color}>{CONTOUR_FIELDS[key].label}</span></label>
+          <div class="contour-settings">
+            {#if key !== 'mslp'}<select aria-label={CONTOUR_FIELDS[key].label + ' pressure level'} bind:value={contourOptions[key].level} on:change={savePreferences} disabled={!enabled}>
+              {#each PRESSURE_LEVELS as level}<option value={level}>{level} hPa</option>{/each}
+            </select>{:else}<small>Mean sea level</small>{/if}
+            <label>Every<select aria-label={CONTOUR_FIELDS[key].label + ' contour spacing'} bind:value={contourOptions[key].step} on:change={savePreferences} disabled={!enabled}>{#each CONTOUR_FIELDS[key].steps as step}<option value={step}>{step} {key === 'temp' ? 'C' : CONTOUR_FIELDS[key].units}</option>{/each}</select></label>
+            <input aria-label={CONTOUR_FIELDS[key].label + ' contour color'} type="color" bind:value={contourOptions[key].color} on:change={savePreferences} disabled={!enabled} />
+          </div>
+        </div>
+      {/each}
+      <label class="contour-check"><input aria-label="Contour labels" type="checkbox" bind:checked={contourOptions.labels} on:change={savePreferences} />Show labels with levels and units</label>
+      {#if contourStatus.loading}<p class="loading" role="status">Loading GEOS weather isolines.</p>{/if}
+      {#each contourStatus.errors as message}<p class="error" role="alert">{message}</p>{/each}
+      {#if contourStatus.validTime && contourStatus.active.length}
+        <small class="contour-time" data-testid="contour-time">Contours valid {displayTime(contourStatus.validTime)}; instantaneous snapshot.<br />GEOS run {new Date(contourStatus.runTime).toISOString().slice(0, 16).replace('T', ' ')} UTC.</small>
+      {/if}
+      <small>Independent layers, shown together. GEOS-FP on a sampled 1.25-degree contour grid; upper-air values below terrain are masked. Height labels use dam (1 dam = 10 m), temperature uses Celsius, MSLP uses hPa.</small>
+      <small>Contours follow the nearest 3-hour snapshot within 90 minutes of Windy's forecast time. Dust is a 3-hour mean; satellite observation time is independent.</small>
+    </details>
     <label class="place">Place<select aria-label="Location" bind:value={selected.name} on:change={e => { const p = [...places, ...saved].find(v => v.name === e.currentTarget.value); if (p) { selectPoint(p); map.panTo([Math.max(-85, Math.min(85, p.lat)), p.lon]); } }} disabled={!enabled}>
       {#if ![...places, ...saved].some(p => p.name === selected.name)}<option value={selected.name}>{selected.name}</option>{/if}
       {#each places as p}<option value={p.name}>{p.name}</option>{/each}
@@ -296,7 +337,7 @@
       <p>Surface dust is modelled mineral dust, not total PM₁₀. Fine dust is only the dust contribution to PM₂.₅. Optical depth describes the full atmospheric column and is not a visibility estimate. Threshold guidance applies to the selected point and forecast period only. There are no background notifications.</p>
       <p>Use surface observations and official warnings for decisions. Forecast accuracy and alert thresholds have not been independently validated.</p>
     </details>
-    <footer><button disabled={!enabled || loading || satMetaLoading || satLoading} on:click={() => view === 'forecast' ? load() : refreshSatellite()}>Refresh</button>
+    <footer><button disabled={!enabled || loading || satMetaLoading || satLoading} on:click={refreshAll}>Refresh</button>
       {#if forecast}<small>GEOS run {new Date(forecast.runTime).toISOString().slice(0, 16).replace('T', ' ')} UTC<br />Retrieved {displayTime(forecast.retrievedAt)} · display times use your device timezone</small>{/if}
     </footer>
   </section>
@@ -317,5 +358,6 @@
   .error{background:#692f30;padding:9px;border-radius:7px;font-size:12px}.loading{font-size:12px;color:#ffd486}details{margin-top:12px}summary{cursor:pointer;font-size:12px}details p,.explain{font-size:11px;color:#bbcad6}a{color:#ffd486}
   .timeline{display:flex;gap:5px;flex-wrap:wrap;max-height:160px;overflow:auto;margin-top:8px}.timeline button{font-size:10px}.series{max-height:220px;overflow:auto;margin-top:8px}table{width:100%;border-collapse:collapse;font-size:10px}td,th{padding:4px;border-bottom:1px solid #42586b;text-align:right}td:first-child,th:first-child{text-align:left}td button{font-size:10px}
   .resolution{margin-top:12px}.observation{background:#21384a;padding:9px;border-radius:8px}.opacity{justify-content:space-between;margin-top:9px}.opacity input{width:130px}footer{border-top:1px solid #42586b;margin-top:12px;padding-top:8px}footer small{font-size:10px;margin-top:6px}
+  .contour-controls{border:1px solid #42586b;border-radius:9px;padding:9px;margin:10px 0}.contour-presets{display:flex;gap:5px;margin:9px 0}.contour-presets button{font-size:10px}.contour-row{border-bottom:1px solid #42586b;padding:8px 0}.contour-check{font-size:11px;gap:6px}.contour-settings{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:6px}.contour-settings label{font-size:10px}.contour-settings select{font-size:10px;padding:4px}.contour-settings input[type=color]{width:28px;height:26px;padding:2px;flex-shrink:0}.contour-time{margin:8px 0}.contour-controls>small{margin-top:7px}
   @media(max-width:600px){.panel{bottom:100px;width:285px;max-height:62dvh;padding:12px}.restore{bottom:100px}.coordinates input{width:65px}}
 </style>

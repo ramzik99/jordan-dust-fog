@@ -1,6 +1,6 @@
-# Dust forecast for Windy
+# Synoptic Atlas for Windy
 
-Unpublished v1.0.0 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP dust forecasts, point threshold guidance, and EUMETSAT satellite dust imagery. No fog features.
+Unpublished v1.1.0 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP dust forecasts, point threshold guidance, and EUMETSAT satellite dust imagery. No fog features.
 
 ## Features
 
@@ -19,11 +19,27 @@ Unpublished v1.0.0 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP d
 
    https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@preview/plugin.js
 
-3. Open **Dust forecast**. Choose a place or click the map, then select an available interval in **Forecast periods** or on Windy's timeline.
+3. Open **Synoptic Atlas**. Choose a place or click the map, then select an available interval in **Forecast periods** or on Windy's timeline.
 4. Check all three fields, change the point threshold, and try coordinates near the date line. Under **Point forecast**, load the complete table only when wanted; native frames can total tens of MB.
 5. Select **Satellite**, choose the source, and check the observation timestamp. Satellite RGB supports visual tracking and does not supply surface concentration.
 
 The preview branch updates after the build and browser checks pass. An immutable preview URL can be formed by replacing `preview` with that branch's full commit SHA. CDN caches can delay the moving URL; use the pinned URL supplied with a completed build when checking a specific version. This workflow does not publish to Windy's plugin directory.
+
+## Independent weather isolines
+
+Open **Weather isolines** and tick **Geopotential height**, **Temperature**, and **MSLP** independently. They can appear together over dust or satellite imagery. **Synoptic preset** enables 500 hPa height, 850 hPa temperature and MSLP. **Clear contours** removes all three. Each line family has its own colour and contour spacing; labels include levels and units.
+
+Upper-air levels: 925, 850, 700, 500 and 300 hPa. MSLP is always mean sea-level pressure. Height uses decametres (1 dam = 10 m); temperature uses Celsius; pressure uses hPa. Values below terrain are masked, and missing cells leave gaps.
+
+The source is NASA GEOS-FP `inst3_3d_asm_Np`: H in metres is converted to dam, T from Kelvin to Celsius, and SLP from Pa to hPa. Units follow the [NASA file specification](https://gmao.gsfc.nasa.gov/GMAO_products/documents/GEOS_5_FP_File_Specification_ON4v1_2.pdf) and are checked against attributes when supplied. These are three-hourly instantaneous meteorological snapshots. They are separate from the three-hour dust averaging intervals. The nearest snapshot is used only within 90 minutes of Windy's selected forecast time, and its exact valid time and source run are displayed. Satellite time remains independent.
+
+Contour geometry is computed from a sampled 1.25-degree grid using marching squares, including periodic longitude closure. This is a synoptic overview, with coarser spatial sampling than the native dust map. Labels and line interpolation do not add forecast resolution. Contour spacing and units do not follow Windy's native isoline settings.
+
+Live contour manifest:
+
+https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/geos-synoptic-data/contours/latest.json
+
+The meteorological feed refreshes independently of the dust feed, so their available runs and forecast horizons may differ. An unavailable layer clears while the other enabled layers remain visible. The contour feed retains the current and previous runs on its own generated-data branch. All contour layers start off by default; user choices are saved locally. The plugin does not change Windy's weather model, background layer or native isolines.
 
 ## Forecast pipeline
 
