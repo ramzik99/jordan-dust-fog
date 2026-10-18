@@ -1,17 +1,17 @@
 const __pluginConfig =  {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "icon": "🌐",
   "title": "Synoptic Atlas",
-  "description": "Independent GEOS-FP geopotential height, temperature and MSLP isolines, with pressure levels and labels.",
+  "description": "Independent GEOS-FP geopotential height and temperature isolines, with pressure levels and labels.",
   "author": "Ramzi Kandah",
   "repository": "https://github.com/ramzik99/jordan-dust-fog",
   "desktopUI": "embedded",
   "mobileUI": "small",
   "addToContextmenu": false,
   "listenToSingleclick": false,
-  "built": 1792353575724,
-  "builtReadable": "2026-10-18T19:59:35.724Z"
+  "built": 1792353786102,
+  "builtReadable": "2026-10-18T20:03:06.102Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -673,8 +673,451 @@ if (typeof window !== 'undefined')
 	(window.__svelte || (window.__svelte = { v: new Set() })).v.add(PUBLIC_VERSION);
 
 const config = {
-    version: '1.0.1',
+    version: '1.1.0',
     title: 'Synoptic Atlas'};
+
+// Discrete contour colors sampled from the supplied temperature and height legends.
+const CONTOUR_PALETTES = {
+  "temp": [
+    [
+      -40,
+      "#050505"
+    ],
+    [
+      -38,
+      "#080808"
+    ],
+    [
+      -36,
+      "#0f100f"
+    ],
+    [
+      -34,
+      "#451e52"
+    ],
+    [
+      -32,
+      "#5b1c64"
+    ],
+    [
+      -30,
+      "#631c6a"
+    ],
+    [
+      -28,
+      "#7c1b7f"
+    ],
+    [
+      -26,
+      "#841a85"
+    ],
+    [
+      -24,
+      "#9e1999"
+    ],
+    [
+      -22,
+      "#a519a0"
+    ],
+    [
+      -20,
+      "#b518ac"
+    ],
+    [
+      -18,
+      "#e14ed1"
+    ],
+    [
+      -16,
+      "#e97ee0"
+    ],
+    [
+      -14,
+      "#d491fb"
+    ],
+    [
+      -12,
+      "#b473d8"
+    ],
+    [
+      -10,
+      "#9555b5"
+    ],
+    [
+      -8,
+      "#322b80"
+    ],
+    [
+      -6,
+      "#292991"
+    ],
+    [
+      -4,
+      "#1857bc"
+    ],
+    [
+      -2,
+      "#3f90d6"
+    ],
+    [
+      0,
+      "#66caf0"
+    ],
+    [
+      2,
+      "#20bf7b"
+    ],
+    [
+      4,
+      "#1ca44d"
+    ],
+    [
+      6,
+      "#37a421"
+    ],
+    [
+      8,
+      "#4fbb36"
+    ],
+    [
+      10,
+      "#67d34b"
+    ],
+    [
+      12,
+      "#fbdf11"
+    ],
+    [
+      14,
+      "#f5be19"
+    ],
+    [
+      16,
+      "#e36d3e"
+    ],
+    [
+      18,
+      "#eb4b2d"
+    ],
+    [
+      20,
+      "#f32a1d"
+    ],
+    [
+      22,
+      "#c82d2c"
+    ],
+    [
+      24,
+      "#9a2421"
+    ],
+    [
+      26,
+      "#552928"
+    ],
+    [
+      28,
+      "#4d232a"
+    ],
+    [
+      30,
+      "#451d2c"
+    ],
+    [
+      32,
+      "#595154"
+    ],
+    [
+      34,
+      "#999596"
+    ],
+    [
+      36,
+      "#ffffff"
+    ],
+    [
+      38,
+      "#ffffff"
+    ],
+    [
+      40,
+      "#ffffff"
+    ]
+  ],
+  "gh": [
+    [
+      470,
+      "#f7f7f7"
+    ],
+    [
+      472,
+      "#d4d4d4"
+    ],
+    [
+      474,
+      "#a7a7a7"
+    ],
+    [
+      476,
+      "#7a7a7a"
+    ],
+    [
+      478,
+      "#4c4c4c"
+    ],
+    [
+      480,
+      "#640090"
+    ],
+    [
+      482,
+      "#6e119b"
+    ],
+    [
+      484,
+      "#7820a6"
+    ],
+    [
+      486,
+      "#8332b1"
+    ],
+    [
+      488,
+      "#8e43bd"
+    ],
+    [
+      490,
+      "#9955c9"
+    ],
+    [
+      492,
+      "#a264d3"
+    ],
+    [
+      494,
+      "#ad75df"
+    ],
+    [
+      496,
+      "#b887eb"
+    ],
+    [
+      498,
+      "#c296f5"
+    ],
+    [
+      500,
+      "#c8a2fd"
+    ],
+    [
+      502,
+      "#b896f2"
+    ],
+    [
+      504,
+      "#ad8dec"
+    ],
+    [
+      506,
+      "#9d80e1"
+    ],
+    [
+      508,
+      "#8d74d7"
+    ],
+    [
+      510,
+      "#7d67cd"
+    ],
+    [
+      512,
+      "#6f5cc4"
+    ],
+    [
+      514,
+      "#5f4fba"
+    ],
+    [
+      516,
+      "#4f43af"
+    ],
+    [
+      518,
+      "#4137a6"
+    ],
+    [
+      520,
+      "#332f9f"
+    ],
+    [
+      522,
+      "#2d3da6"
+    ],
+    [
+      524,
+      "#284bad"
+    ],
+    [
+      526,
+      "#2358b4"
+    ],
+    [
+      528,
+      "#1e66bb"
+    ],
+    [
+      530,
+      "#1974c3"
+    ],
+    [
+      532,
+      "#1481c9"
+    ],
+    [
+      534,
+      "#0f8fd1"
+    ],
+    [
+      536,
+      "#0b9ad6"
+    ],
+    [
+      538,
+      "#06a7dd"
+    ],
+    [
+      540,
+      "#007930"
+    ],
+    [
+      542,
+      "#268b38"
+    ],
+    [
+      544,
+      "#4d9f40"
+    ],
+    [
+      546,
+      "#70b24a"
+    ],
+    [
+      548,
+      "#82ca5c"
+    ],
+    [
+      550,
+      "#93e16e"
+    ],
+    [
+      552,
+      "#f4f569"
+    ],
+    [
+      554,
+      "#f5e756"
+    ],
+    [
+      556,
+      "#f6d944"
+    ],
+    [
+      558,
+      "#f8cb32"
+    ],
+    [
+      560,
+      "#f9bd1f"
+    ],
+    [
+      562,
+      "#faaf0d"
+    ],
+    [
+      564,
+      "#fb9e00"
+    ],
+    [
+      566,
+      "#f98200"
+    ],
+    [
+      568,
+      "#f76c00"
+    ],
+    [
+      570,
+      "#f54f00"
+    ],
+    [
+      572,
+      "#f33300"
+    ],
+    [
+      574,
+      "#f11700"
+    ],
+    [
+      576,
+      "#f00000"
+    ],
+    [
+      578,
+      "#e20000"
+    ],
+    [
+      580,
+      "#d40000"
+    ],
+    [
+      582,
+      "#c70000"
+    ],
+    [
+      584,
+      "#ba0000"
+    ],
+    [
+      586,
+      "#790000"
+    ],
+    [
+      588,
+      "#860000"
+    ],
+    [
+      590,
+      "#6f0000"
+    ],
+    [
+      592,
+      "#550000"
+    ],
+    [
+      594,
+      "#400000"
+    ],
+    [
+      596,
+      "#280000"
+    ],
+    [
+      598,
+      "#110000"
+    ],
+    [
+      600,
+      "#000000"
+    ]
+  ]
+};
+function contourColor(field, value) {
+  const stops = CONTOUR_PALETTES[field];
+  if (!stops || !Number.isFinite(value)) throw Error('Unknown contour color');
+  let selected = stops[0][1];
+  for (const [threshold, color] of stops) { if (value < threshold) break; selected = color; }
+  return selected;
+}
 
 const MAX_RUN_AGE_MS = 36 * 60 * 60 * 1000;
 
@@ -710,11 +1153,10 @@ const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
 const CONTOUR_FIELDS = {
   gh: { label: 'Geopotential height', units: 'dam', steps: [3, 6, 12], bounds: [-100, 6000] },
   temp: { label: 'Temperature', units: 'degC', steps: [2, 4, 8], bounds: [-173.2, 126.9] },
-  mslp: { label: 'MSLP', units: 'hPa', steps: [2, 4, 8], bounds: [800, 1100] },
 };
 function defaultContours() {
-  return { labels: true, gh: { on: false, level: 500, step: 6, color: '#ffd166' },
-    temp: { on: false, level: 850, step: 4, color: '#66d9ff' }, mslp: { on: false, level: 0, step: 4, color: '#ffffff' } };
+  return { labels: true, gh: { on: false, level: 500, step: 6,  },
+    temp: { on: false, level: 850, step: 4,  } };
 }
 function safeContourOptions(raw) {
   const result = defaultContours(); if (!raw) return result;
@@ -722,9 +1164,8 @@ function safeContourOptions(raw) {
   for (const key of Object.keys(CONTOUR_FIELDS)) {
     const p = raw[key]; if (!p) continue;
     result[key].on = p.on === true;
-    if (key !== 'mslp' && PRESSURE_LEVELS.includes(p.level)) result[key].level = p.level;
+    if (PRESSURE_LEVELS.includes(p.level)) result[key].level = p.level;
     if (CONTOUR_FIELDS[key].steps.includes(p.step)) result[key].step = p.step;
-    if (/^#[a-f0-9]{6}$/i.test(p.color || '')) result[key].color = p.color;
   }
   return result;
 }
@@ -751,7 +1192,7 @@ function contourSnapshot(manifest, timestamp) {
   return Math.abs(Date.parse(frame.validTime) - timestamp) <= 5400000 ? frame : null;
 }
 function contourPath(manifest, frame, field, level) {
-  if (!CONTOUR_FIELDS[field] || field === 'mslp' && level !== 0 || field !== 'mslp' && !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
+  if (!CONTOUR_FIELDS[field] || !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
   if (!manifest.frames.includes(frame)) throw Error('Unknown contour snapshot');
   const token = manifest.runTime.slice(0, 10).replaceAll('-', '') + '_' + manifest.runTime.slice(11, 13);
   const stamp = frame.validTime.replaceAll('-', '').replaceAll(':', '');
@@ -791,6 +1232,10 @@ function contourSegments(values, grid, step) {
   }
   return segments;
 }
+function contourHalo(color) {
+  const rgb = [1,3,5].map(i => parseInt(color.slice(i,i+2),16));
+  return rgb[0]*.2126 + rgb[1]*.7152 + rgb[2]*.0722 < 85 ? '#e8eef4' : '#102131';
+}
 const clampLat = lat => Math.max(-85.05112878, Math.min(85.05112878, lat));
 function drawContours(ctx, map, layers, options, width, height) {
   ctx.clearRect(0, 0, width, height); const bounds = map.getBounds(), occupied = new Set(), labelGroups = [], boxes = [];
@@ -802,10 +1247,19 @@ function drawContours(ctx, map, layers, options, width, height) {
       if (Math.max(a.x,b.x)<0 || Math.min(a.x,b.x)>width || Math.max(a.y,b.y)<0 || Math.min(a.y,b.y)>height) continue;
       visible.push([a,b,s[4]]);
     }
-    ctx.beginPath(); for (const [a,b] of visible) { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+    const groups = new Map();
+    for (const segment of visible) {
+      const value = segment[2]; if (!groups.has(value)) groups.set(value, []);
+      groups.get(value).push(segment);
+    }
     ctx.lineJoin = 'round'; ctx.setLineDash(layer.field === 'temp' ? [5,3] : []);
-    ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.8; ctx.stroke();
-    ctx.strokeStyle = config.color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke(); ctx.setLineDash([]);
+    for (const [value, segments] of groups) {
+      const color = contourColor(layer.field, value);
+      ctx.beginPath(); for (const [a,b] of segments) { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+      ctx.strokeStyle = contourHalo(color); ctx.lineWidth = 3.8; ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = layer.field === 'gh' ? 1.8 : 1.3; ctx.stroke();
+    }
+    ctx.setLineDash([]);
     labelGroups.push({ layer, config, visible });
   }
   if (options.labels) {
@@ -815,11 +1269,12 @@ function drawContours(ctx, map, layers, options, width, height) {
         const x=(a.x+b.x)/2, y=(a.y+b.y)/2;
         if (x<45 || x>width-45 || y<18 || y>height-18) continue;
         const cell = layer.field+':'+Math.floor(x/135)+':'+Math.floor(y/65); if (occupied.has(cell)) continue;
-        const label = layer.field === 'mslp' ? `${level} hPa` : `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
+        const label = `${layer.level}h ${level}${layer.field === 'gh' ? ' dam' : '\u00b0C'}`;
         const half=(ctx.measureText?.(label).width || label.length*6)/2;
         if(boxes.some(b=>Math.abs(b.x-x)<b.half+half+5 && Math.abs(b.y-y)<19)) continue;
         occupied.add(cell); boxes.push({x,y,half});
-        ctx.strokeStyle = '#102131'; ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=config.color; ctx.fillText(label,x,y);
+        const color = contourColor(layer.field, level);
+        ctx.strokeStyle = contourHalo(color); ctx.lineWidth = 3.5; ctx.strokeText(label,x,y); ctx.fillStyle=color; ctx.fillText(label,x,y);
       }
     }
   }
@@ -895,7 +1350,7 @@ class ContourOverlay {
 /* src/pluginEntry.svelte generated by Svelte v4.2.20 */
 
 function add_css(target) {
-	append_styles(target, "svelte-1pobaud", ".panel.svelte-1pobaud.svelte-1pobaud,.restore.svelte-1pobaud.svelte-1pobaud{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-1pobaud.svelte-1pobaud{width:320px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-1pobaud.svelte-1pobaud{padding:12px}header.svelte-1pobaud.svelte-1pobaud{display:flex;justify-content:space-between;gap:10px}header.svelte-1pobaud strong.svelte-1pobaud{font-size:20px}small.svelte-1pobaud.svelte-1pobaud{display:block;font-size:11px;color:#bbcad6}button.svelte-1pobaud.svelte-1pobaud,select.svelte-1pobaud.svelte-1pobaud,input.svelte-1pobaud.svelte-1pobaud{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 7px}button.svelte-1pobaud.svelte-1pobaud,select.svelte-1pobaud.svelte-1pobaud{cursor:pointer}button.svelte-1pobaud.svelte-1pobaud:disabled,select.svelte-1pobaud.svelte-1pobaud:disabled{opacity:.5;cursor:default}button.svelte-1pobaud.svelte-1pobaud:focus-visible,select.svelte-1pobaud.svelte-1pobaud:focus-visible,input.svelte-1pobaud.svelte-1pobaud:focus-visible{outline:2px solid #f9a825;outline-offset:2px}label.svelte-1pobaud.svelte-1pobaud{display:flex;align-items:center;gap:4px}input[type=checkbox].svelte-1pobaud.svelte-1pobaud{accent-color:#f9a825}.toolbar.svelte-1pobaud.svelte-1pobaud{display:flex;align-items:center;gap:6px;margin:14px 0}.toolbar.svelte-1pobaud button.svelte-1pobaud{font-size:11px}.toolbar.svelte-1pobaud label.svelte-1pobaud{margin-left:auto}.row.svelte-1pobaud.svelte-1pobaud{border-top:1px solid #42586b;padding:12px 0}.toggle.svelte-1pobaud.svelte-1pobaud{font-size:12px;gap:7px}.settings.svelte-1pobaud.svelte-1pobaud{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:8px}.settings.svelte-1pobaud label.svelte-1pobaud{font-size:11px}.settings.svelte-1pobaud select.svelte-1pobaud{font-size:11px;padding:4px}.settings.svelte-1pobaud input[type=color].svelte-1pobaud{width:30px;height:28px;padding:2px;flex-shrink:0}.labels.svelte-1pobaud.svelte-1pobaud{border-top:1px solid #42586b;padding-top:12px}.stamp.svelte-1pobaud.svelte-1pobaud{background:#21384a;padding:10px;border-radius:8px;font-size:12px}.error.svelte-1pobaud.svelte-1pobaud{background:#692f30;padding:9px;border-radius:7px;font-size:12px}.hint.svelte-1pobaud.svelte-1pobaud,details.svelte-1pobaud p.svelte-1pobaud{font-size:11px;color:#bbcad6}.refresh.svelte-1pobaud.svelte-1pobaud{margin:10px 0}summary.svelte-1pobaud.svelte-1pobaud{cursor:pointer;font-size:12px}@media(max-width:600px){.panel.svelte-1pobaud.svelte-1pobaud{bottom:100px;width:295px;max-height:72dvh;padding:12px}.restore.svelte-1pobaud.svelte-1pobaud{bottom:100px}}");
+	append_styles(target, "svelte-1vbdnc4", ".panel.svelte-1vbdnc4.svelte-1vbdnc4,.restore.svelte-1vbdnc4.svelte-1vbdnc4{position:fixed;left:12px;bottom:95px;z-index:1100;background:#142536;color:#f0f5f8;border:1px solid #42586b;border-radius:14px;box-shadow:0 8px 28px #0005;font:13px/1.5 system-ui,sans-serif}.panel.svelte-1vbdnc4.svelte-1vbdnc4{width:320px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 180px);overflow:auto;padding:16px;box-sizing:border-box}.restore.svelte-1vbdnc4.svelte-1vbdnc4{padding:12px}header.svelte-1vbdnc4.svelte-1vbdnc4{display:flex;justify-content:space-between;gap:10px}header.svelte-1vbdnc4 strong.svelte-1vbdnc4{font-size:20px}small.svelte-1vbdnc4.svelte-1vbdnc4{display:block;font-size:11px;color:#bbcad6}button.svelte-1vbdnc4.svelte-1vbdnc4,select.svelte-1vbdnc4.svelte-1vbdnc4,input.svelte-1vbdnc4.svelte-1vbdnc4{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:7px;padding:5px 7px}button.svelte-1vbdnc4.svelte-1vbdnc4,select.svelte-1vbdnc4.svelte-1vbdnc4{cursor:pointer}button.svelte-1vbdnc4.svelte-1vbdnc4:disabled,select.svelte-1vbdnc4.svelte-1vbdnc4:disabled{opacity:.5;cursor:default}button.svelte-1vbdnc4.svelte-1vbdnc4:focus-visible,select.svelte-1vbdnc4.svelte-1vbdnc4:focus-visible,input.svelte-1vbdnc4.svelte-1vbdnc4:focus-visible{outline:2px solid #f9a825;outline-offset:2px}label.svelte-1vbdnc4.svelte-1vbdnc4{display:flex;align-items:center;gap:4px}input[type=checkbox].svelte-1vbdnc4.svelte-1vbdnc4{accent-color:#f9a825}.toolbar.svelte-1vbdnc4.svelte-1vbdnc4{display:flex;align-items:center;gap:6px;margin:14px 0}.toolbar.svelte-1vbdnc4 button.svelte-1vbdnc4{font-size:11px}.toolbar.svelte-1vbdnc4 label.svelte-1vbdnc4{margin-left:auto}.row.svelte-1vbdnc4.svelte-1vbdnc4{border-top:1px solid #42586b;padding:12px 0}.toggle.svelte-1vbdnc4.svelte-1vbdnc4{font-size:12px;gap:7px}.settings.svelte-1vbdnc4.svelte-1vbdnc4{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:8px}.settings.svelte-1vbdnc4 label.svelte-1vbdnc4{font-size:11px}.settings.svelte-1vbdnc4 select.svelte-1vbdnc4{font-size:11px;padding:4px}.labels.svelte-1vbdnc4.svelte-1vbdnc4{border-top:1px solid #42586b;padding-top:12px}.stamp.svelte-1vbdnc4.svelte-1vbdnc4{background:#21384a;padding:10px;border-radius:8px;font-size:12px}.error.svelte-1vbdnc4.svelte-1vbdnc4{background:#692f30;padding:9px;border-radius:7px;font-size:12px}.hint.svelte-1vbdnc4.svelte-1vbdnc4,details.svelte-1vbdnc4 p.svelte-1vbdnc4{font-size:11px;color:#bbcad6}.refresh.svelte-1vbdnc4.svelte-1vbdnc4{margin:10px 0}summary.svelte-1vbdnc4.svelte-1vbdnc4{cursor:pointer;font-size:12px}.legend.svelte-1vbdnc4.svelte-1vbdnc4{margin-top:10px}.scale.svelte-1vbdnc4.svelte-1vbdnc4{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 8px;margin:8px 0}.swatch.svelte-1vbdnc4.svelte-1vbdnc4{display:flex;align-items:center;gap:5px;font-size:10px}.swatch.svelte-1vbdnc4 span.svelte-1vbdnc4{display:block;width:24px;height:9px;border:1px solid #789}.swatch.svelte-1vbdnc4 b.svelte-1vbdnc4{font-weight:500}@media(max-width:600px){.panel.svelte-1vbdnc4.svelte-1vbdnc4{bottom:100px;width:295px;max-height:72dvh;padding:12px}.restore.svelte-1vbdnc4.svelte-1vbdnc4{bottom:100px}}");
 }
 
 function get_each_context(ctx, list, i) {
@@ -914,17 +1369,24 @@ function get_each_context_1(ctx, list, i) {
 
 function get_each_context_2(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[33] = list[i];
+	child_ctx[33] = list[i][0];
+	child_ctx[34] = list[i][1];
 	return child_ctx;
 }
 
 function get_each_context_3(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[36] = list[i];
+	child_ctx[37] = list[i];
 	return child_ctx;
 }
 
-// (66:0) {:else}
+function get_each_context_4(ctx, list, i) {
+	const child_ctx = ctx.slice();
+	child_ctx[40] = list[i];
+	return child_ctx;
+}
+
+// (68:0) {:else}
 function create_else_block(ctx) {
 	let section;
 	let header;
@@ -952,7 +1414,7 @@ function create_else_block(ctx) {
 	let t14;
 	let small1;
 	let t15;
-	let t16_value = /*displayTime*/ ctx[6](/*timestamp*/ ctx[3]) + "";
+	let t16_value = /*displayTime*/ ctx[7](/*timestamp*/ ctx[3]) + "";
 	let t16;
 	let t17;
 	let t18;
@@ -978,12 +1440,12 @@ function create_else_block(ctx) {
 		each_blocks[i] = create_each_block(get_each_context(ctx, each_value, i));
 	}
 
-	function select_block_type_2(ctx, dirty) {
+	function select_block_type_1(ctx, dirty) {
 		if (/*status*/ ctx[5].validTime && /*status*/ ctx[5].active.length) return create_if_block_1;
 		if (!/*status*/ ctx[5].loading && !/*status*/ ctx[5].errors.length) return create_if_block_2;
 	}
 
-	let current_block_type = select_block_type_2(ctx);
+	let current_block_type = select_block_type_1(ctx);
 	let if_block1 = current_block_type && current_block_type(ctx);
 
 	return {
@@ -1036,29 +1498,29 @@ function create_else_block(ctx) {
 			t19 = text("Refresh");
 			t20 = space();
 			details = element("details");
-			details.innerHTML = `<summary class="svelte-1pobaud">Source and interpretation</summary><p class="svelte-1pobaud">NASA GEOS-FP, sampled on a 1.25° grid. Three-hourly instantaneous snapshots follow the nearest available time within 90 minutes of Windy&#39;s timeline. Exact valid time and source run are shown above.</p><p class="svelte-1pobaud">Height: dam (1 dam = 10 m). Temperature: Celsius. MSLP: hPa. Upper-air values below terrain are masked; missing cells leave gaps. Forecast availability depends on the source cycle.</p><p class="svelte-1pobaud">Each checkbox is independent. These layers share the map with Windy&#39;s selected background and do not change its forecast model or native isolines.</p>`;
-			attr(strong, "class", "svelte-1pobaud");
-			attr(small0, "class", "svelte-1pobaud");
+			details.innerHTML = `<summary class="svelte-1vbdnc4">Source and interpretation</summary><p class="svelte-1vbdnc4">NASA GEOS-FP, sampled on a 1.25° grid. Three-hourly instantaneous snapshots follow the nearest available time within 90 minutes of Windy&#39;s timeline. Exact valid time and source run are shown above.</p><p class="svelte-1vbdnc4">Height: dam (1 dam = 10 m). Temperature: Celsius. Upper-air values below terrain are masked; missing cells leave gaps. Forecast availability depends on the source cycle.</p><p class="svelte-1vbdnc4">Each checkbox is independent. These layers share the map with Windy&#39;s selected background and do not change its forecast model or native isolines.</p>`;
+			attr(strong, "class", "svelte-1vbdnc4");
+			attr(small0, "class", "svelte-1vbdnc4");
 			attr(button0, "aria-label", "Minimize panel");
-			attr(button0, "class", "svelte-1pobaud");
-			attr(header, "class", "svelte-1pobaud");
+			attr(button0, "class", "svelte-1vbdnc4");
+			attr(header, "class", "svelte-1vbdnc4");
 			button1.disabled = button1_disabled_value = !/*enabled*/ ctx[2];
-			attr(button1, "class", "svelte-1pobaud");
-			attr(button2, "class", "svelte-1pobaud");
+			attr(button1, "class", "svelte-1vbdnc4");
+			attr(button2, "class", "svelte-1vbdnc4");
 			attr(input0, "aria-label", "Enable isolines");
 			attr(input0, "type", "checkbox");
-			attr(input0, "class", "svelte-1pobaud");
-			attr(label0, "class", "svelte-1pobaud");
-			attr(div1, "class", "toolbar svelte-1pobaud");
+			attr(input0, "class", "svelte-1vbdnc4");
+			attr(label0, "class", "svelte-1vbdnc4");
+			attr(div1, "class", "toolbar svelte-1vbdnc4");
 			attr(input1, "aria-label", "Contour labels");
 			attr(input1, "type", "checkbox");
-			attr(input1, "class", "svelte-1pobaud");
-			attr(label1, "class", "toggle labels svelte-1pobaud");
-			attr(small1, "class", "svelte-1pobaud");
-			attr(button3, "class", "refresh svelte-1pobaud");
+			attr(input1, "class", "svelte-1vbdnc4");
+			attr(label1, "class", "toggle labels svelte-1vbdnc4");
+			attr(small1, "class", "svelte-1vbdnc4");
+			attr(button3, "class", "refresh svelte-1vbdnc4");
 			button3.disabled = button3_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[5].loading;
-			attr(details, "class", "svelte-1pobaud");
-			attr(section, "class", "panel svelte-1pobaud");
+			attr(details, "class", "svelte-1vbdnc4");
+			attr(section, "class", "panel svelte-1vbdnc4");
 			attr(section, "aria-label", "Synoptic Atlas");
 		},
 		m(target, anchor) {
@@ -1115,12 +1577,12 @@ function create_else_block(ctx) {
 
 			if (!mounted) {
 				dispose = [
-					listen(button0, "click", /*click_handler_1*/ ctx[12]),
-					listen(button1, "click", /*preset*/ ctx[8]),
-					listen(button2, "click", /*clear*/ ctx[9]),
-					listen(input0, "change", /*input0_change_handler*/ ctx[13]),
+					listen(button0, "click", /*click_handler_1*/ ctx[13]),
+					listen(button1, "click", /*preset*/ ctx[9]),
+					listen(button2, "click", /*clear*/ ctx[10]),
+					listen(input0, "change", /*input0_change_handler*/ ctx[14]),
 					listen(input1, "change", /*input1_change_handler*/ ctx[18]),
-					listen(input1, "change", /*save*/ ctx[7]),
+					listen(input1, "change", /*save*/ ctx[8]),
 					listen(button3, "click", /*click_handler_2*/ ctx[19])
 				];
 
@@ -1136,7 +1598,7 @@ function create_else_block(ctx) {
 				input0.checked = /*enabled*/ ctx[2];
 			}
 
-			if (dirty[0] & /*enabled, options, save*/ 133) {
+			if (dirty[0] & /*legendStops, enabled, options, save*/ 325) {
 				each_value_1 = ensure_array_like(Object.keys(CONTOUR_FIELDS));
 				let i;
 
@@ -1197,7 +1659,7 @@ function create_else_block(ctx) {
 				each_blocks.length = each_value.length;
 			}
 
-			if (current_block_type === (current_block_type = select_block_type_2(ctx)) && if_block1) {
+			if (current_block_type === (current_block_type = select_block_type_1(ctx)) && if_block1) {
 				if_block1.p(ctx, dirty);
 			} else {
 				if (if_block1) if_block1.d(1);
@@ -1209,7 +1671,7 @@ function create_else_block(ctx) {
 				}
 			}
 
-			if (dirty[0] & /*timestamp*/ 8 && t16_value !== (t16_value = /*displayTime*/ ctx[6](/*timestamp*/ ctx[3]) + "")) set_data(t16, t16_value);
+			if (dirty[0] & /*timestamp*/ 8 && t16_value !== (t16_value = /*displayTime*/ ctx[7](/*timestamp*/ ctx[3]) + "")) set_data(t16, t16_value);
 
 			if (dirty[0] & /*enabled, status*/ 36 && button3_disabled_value !== (button3_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[5].loading)) {
 				button3.disabled = button3_disabled_value;
@@ -1234,7 +1696,7 @@ function create_else_block(ctx) {
 	};
 }
 
-// (64:0) {#if hidden}
+// (66:0) {#if hidden}
 function create_if_block(ctx) {
 	let button;
 	let mounted;
@@ -1244,13 +1706,13 @@ function create_if_block(ctx) {
 		c() {
 			button = element("button");
 			button.textContent = "Synoptic Atlas";
-			attr(button, "class", "restore svelte-1pobaud");
+			attr(button, "class", "restore svelte-1vbdnc4");
 		},
 		m(target, anchor) {
 			insert(target, button, anchor);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*click_handler*/ ctx[11]);
+				dispose = listen(button, "click", /*click_handler*/ ctx[12]);
 				mounted = true;
 			}
 		},
@@ -1266,110 +1728,15 @@ function create_if_block(ctx) {
 	};
 }
 
-// (74:256) {:else}
-function create_else_block_1(ctx) {
-	let small;
-
-	return {
-		c() {
-			small = element("small");
-			small.textContent = "Mean sea level";
-			attr(small, "class", "svelte-1pobaud");
-		},
-		m(target, anchor) {
-			insert(target, small, anchor);
-		},
-		p: noop,
-		d(detaching) {
-			if (detaching) {
-				detach(small);
-			}
-		}
-	};
-}
-
-// (74:10) {#if key !== 'mslp'}
-function create_if_block_4(ctx) {
-	let select;
-	let select_disabled_value;
-	let mounted;
-	let dispose;
-	let each_value_3 = ensure_array_like(PRESSURE_LEVELS);
-	let each_blocks = [];
-
-	for (let i = 0; i < each_value_3.length; i += 1) {
-		each_blocks[i] = create_each_block_3(get_each_context_3(ctx, each_value_3, i));
-	}
-
-	function select_change_handler() {
-		/*select_change_handler*/ ctx[15].call(select, /*key*/ ctx[30]);
-	}
-
-	return {
-		c() {
-			select = element("select");
-
-			for (let i = 0; i < each_blocks.length; i += 1) {
-				each_blocks[i].c();
-			}
-
-			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' pressure level');
-			select.disabled = select_disabled_value = !/*enabled*/ ctx[2];
-			attr(select, "class", "svelte-1pobaud");
-			if (/*options*/ ctx[0][/*key*/ ctx[30]].level === void 0) add_render_callback(select_change_handler);
-		},
-		m(target, anchor) {
-			insert(target, select, anchor);
-
-			for (let i = 0; i < each_blocks.length; i += 1) {
-				if (each_blocks[i]) {
-					each_blocks[i].m(select, null);
-				}
-			}
-
-			select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].level, true);
-
-			if (!mounted) {
-				dispose = [
-					listen(select, "change", select_change_handler),
-					listen(select, "change", /*save*/ ctx[7])
-				];
-
-				mounted = true;
-			}
-		},
-		p(new_ctx, dirty) {
-			ctx = new_ctx;
-
-			if (dirty[0] & /*enabled*/ 4 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[2])) {
-				select.disabled = select_disabled_value;
-			}
-
-			if (dirty[0] & /*options*/ 1) {
-				select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].level);
-			}
-		},
-		d(detaching) {
-			if (detaching) {
-				detach(select);
-			}
-
-			destroy_each(each_blocks, detaching);
-			mounted = false;
-			run_all(dispose);
-		}
-	};
-}
-
-// (74:166) {#each PRESSURE_LEVELS as level}
-function create_each_block_3(ctx) {
+// (76:146) {#each PRESSURE_LEVELS as level}
+function create_each_block_4(ctx) {
 	let option;
 
 	return {
 		c() {
 			option = element("option");
-			option.textContent = `${/*level*/ ctx[36]} hPa`;
-			option.__value = /*level*/ ctx[36];
+			option.textContent = `${/*level*/ ctx[40]} hPa`;
+			option.__value = /*level*/ ctx[40];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1384,10 +1751,10 @@ function create_each_block_3(ctx) {
 	};
 }
 
-// (75:158) {#each CONTOUR_FIELDS[key].steps as step}
-function create_each_block_2(ctx) {
+// (77:158) {#each CONTOUR_FIELDS[key].steps as step}
+function create_each_block_3(ctx) {
 	let option;
-	let t0_value = /*step*/ ctx[33] + "";
+	let t0_value = /*step*/ ctx[37] + "";
 	let t0;
 	let t1;
 
@@ -1403,7 +1770,7 @@ function create_each_block_2(ctx) {
 			t0 = text(t0_value);
 			t1 = space();
 			t2 = text(t2_value);
-			option.__value = /*step*/ ctx[33];
+			option.__value = /*step*/ ctx[37];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1421,128 +1788,208 @@ function create_each_block_2(ctx) {
 	};
 }
 
-// (70:4) {#each Object.keys(CONTOUR_FIELDS) as key}
-function create_each_block_1(ctx) {
-	let div1;
-	let label0;
-	let input0;
-	let input0_disabled_value;
+// (81:12) {#each legendStops(key) as [value, color]}
+function create_each_block_2(ctx) {
+	let div;
 	let span;
-	let t0_value = CONTOUR_FIELDS[/*key*/ ctx[30]].label + "";
-	let t0;
-	let span_style_value;
+	let b;
+
+	return {
+		c() {
+			div = element("div");
+			span = element("span");
+			b = element("b");
+			b.textContent = `${/*value*/ ctx[33]}`;
+			attr(span, "style", 'background:' + /*color*/ ctx[34]);
+			attr(span, "class", "svelte-1vbdnc4");
+			attr(b, "class", "svelte-1vbdnc4");
+			attr(div, "class", "swatch svelte-1vbdnc4");
+		},
+		m(target, anchor) {
+			insert(target, div, anchor);
+			append(div, span);
+			append(div, b);
+		},
+		p: noop,
+		d(detaching) {
+			if (detaching) {
+				detach(div);
+			}
+		}
+	};
+}
+
+// (72:4) {#each Object.keys(CONTOUR_FIELDS) as key}
+function create_each_block_1(ctx) {
+	let div2;
+	let label0;
+	let input;
+	let input_disabled_value;
+	let span;
 	let t1;
 	let div0;
+	let select0;
+	let select0_disabled_value;
 	let t2;
 	let label1;
 	let t3;
-	let select;
-	let select_disabled_value;
+	let select1;
+	let select1_disabled_value;
 	let t4;
-	let input1;
-	let input1_disabled_value;
+	let details;
+	let summary;
+	let t9;
+	let div1;
+	let t10;
+	let small;
 	let mounted;
 	let dispose;
 
-	function input0_change_handler_1() {
-		/*input0_change_handler_1*/ ctx[14].call(input0, /*key*/ ctx[30]);
+	function input_change_handler() {
+		/*input_change_handler*/ ctx[15].call(input, /*key*/ ctx[30]);
 	}
 
-	function select_block_type_1(ctx, dirty) {
-		if (/*key*/ ctx[30] !== 'mslp') return create_if_block_4;
-		return create_else_block_1;
+	let each_value_4 = ensure_array_like(PRESSURE_LEVELS);
+	let each_blocks_2 = [];
+
+	for (let i = 0; i < each_value_4.length; i += 1) {
+		each_blocks_2[i] = create_each_block_4(get_each_context_4(ctx, each_value_4, i));
 	}
 
-	let current_block_type = select_block_type_1(ctx);
-	let if_block = current_block_type(ctx);
-	let each_value_2 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+	function select0_change_handler() {
+		/*select0_change_handler*/ ctx[16].call(select0, /*key*/ ctx[30]);
+	}
+
+	let each_value_3 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+	let each_blocks_1 = [];
+
+	for (let i = 0; i < each_value_3.length; i += 1) {
+		each_blocks_1[i] = create_each_block_3(get_each_context_3(ctx, each_value_3, i));
+	}
+
+	function select1_change_handler() {
+		/*select1_change_handler*/ ctx[17].call(select1, /*key*/ ctx[30]);
+	}
+
+	let each_value_2 = ensure_array_like(/*legendStops*/ ctx[6](/*key*/ ctx[30]));
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value_2.length; i += 1) {
 		each_blocks[i] = create_each_block_2(get_each_context_2(ctx, each_value_2, i));
 	}
 
-	function select_change_handler_1() {
-		/*select_change_handler_1*/ ctx[16].call(select, /*key*/ ctx[30]);
-	}
-
-	function input1_input_handler() {
-		/*input1_input_handler*/ ctx[17].call(input1, /*key*/ ctx[30]);
-	}
-
 	return {
 		c() {
-			div1 = element("div");
+			div2 = element("div");
 			label0 = element("label");
-			input0 = element("input");
+			input = element("input");
 			span = element("span");
-			t0 = text(t0_value);
+			span.textContent = `${CONTOUR_FIELDS[/*key*/ ctx[30]].label}`;
 			t1 = space();
 			div0 = element("div");
-			if_block.c();
+			select0 = element("select");
+
+			for (let i = 0; i < each_blocks_2.length; i += 1) {
+				each_blocks_2[i].c();
+			}
+
 			t2 = space();
 			label1 = element("label");
 			t3 = text("Every");
-			select = element("select");
+			select1 = element("select");
+
+			for (let i = 0; i < each_blocks_1.length; i += 1) {
+				each_blocks_1[i].c();
+			}
+
+			t4 = space();
+			details = element("details");
+			summary = element("summary");
+			summary.textContent = `${CONTOUR_FIELDS[/*key*/ ctx[30]].label} colors (${/*key*/ ctx[30] === 'temp' ? '°C' : 'dam'})`;
+			t9 = space();
+			div1 = element("div");
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				each_blocks[i].c();
 			}
 
-			t4 = space();
-			input1 = element("input");
-			attr(input0, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' isolines');
-			attr(input0, "type", "checkbox");
-			input0.disabled = input0_disabled_value = !/*enabled*/ ctx[2];
-			attr(input0, "class", "svelte-1pobaud");
-			attr(span, "style", span_style_value = 'color:' + /*options*/ ctx[0][/*key*/ ctx[30]].color);
-			attr(label0, "class", "toggle svelte-1pobaud");
-			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' contour spacing');
-			select.disabled = select_disabled_value = !/*enabled*/ ctx[2];
-			attr(select, "class", "svelte-1pobaud");
-			if (/*options*/ ctx[0][/*key*/ ctx[30]].step === void 0) add_render_callback(select_change_handler_1);
-			attr(label1, "class", "svelte-1pobaud");
-			attr(input1, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' contour color');
-			attr(input1, "type", "color");
-			input1.disabled = input1_disabled_value = !/*enabled*/ ctx[2];
-			attr(input1, "class", "svelte-1pobaud");
-			attr(div0, "class", "settings svelte-1pobaud");
-			attr(div1, "class", "row svelte-1pobaud");
+			t10 = space();
+			small = element("small");
+			small.textContent = `${/*key*/ ctx[30] === 'temp' ? 'Temperature' : 'Height'} colors follow contour values. Values outside the legend use its end colors.`;
+			attr(input, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' isolines');
+			attr(input, "type", "checkbox");
+			input.disabled = input_disabled_value = !/*enabled*/ ctx[2];
+			attr(input, "class", "svelte-1vbdnc4");
+			attr(label0, "class", "toggle svelte-1vbdnc4");
+			attr(select0, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' pressure level');
+			select0.disabled = select0_disabled_value = !/*enabled*/ ctx[2];
+			attr(select0, "class", "svelte-1vbdnc4");
+			if (/*options*/ ctx[0][/*key*/ ctx[30]].level === void 0) add_render_callback(select0_change_handler);
+			attr(select1, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' contour spacing');
+			select1.disabled = select1_disabled_value = !/*enabled*/ ctx[2];
+			attr(select1, "class", "svelte-1vbdnc4");
+			if (/*options*/ ctx[0][/*key*/ ctx[30]].step === void 0) add_render_callback(select1_change_handler);
+			attr(label1, "class", "svelte-1vbdnc4");
+			attr(div0, "class", "settings svelte-1vbdnc4");
+			attr(summary, "class", "svelte-1vbdnc4");
+			attr(div1, "class", "scale svelte-1vbdnc4");
+			attr(div1, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' color legend');
+			attr(small, "class", "svelte-1vbdnc4");
+			attr(details, "class", "legend svelte-1vbdnc4");
+			attr(div2, "class", "row svelte-1vbdnc4");
 		},
 		m(target, anchor) {
-			insert(target, div1, anchor);
-			append(div1, label0);
-			append(label0, input0);
-			input0.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
+			insert(target, div2, anchor);
+			append(div2, label0);
+			append(label0, input);
+			input.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
 			append(label0, span);
-			append(span, t0);
-			append(div1, t1);
-			append(div1, div0);
-			if_block.m(div0, null);
-			append(div0, t2);
-			append(div0, label1);
-			append(label1, t3);
-			append(label1, select);
+			append(div2, t1);
+			append(div2, div0);
+			append(div0, select0);
 
-			for (let i = 0; i < each_blocks.length; i += 1) {
-				if (each_blocks[i]) {
-					each_blocks[i].m(select, null);
+			for (let i = 0; i < each_blocks_2.length; i += 1) {
+				if (each_blocks_2[i]) {
+					each_blocks_2[i].m(select0, null);
 				}
 			}
 
-			select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].step, true);
-			append(div0, t4);
-			append(div0, input1);
-			set_input_value(input1, /*options*/ ctx[0][/*key*/ ctx[30]].color);
+			select_option(select0, /*options*/ ctx[0][/*key*/ ctx[30]].level, true);
+			append(div0, t2);
+			append(div0, label1);
+			append(label1, t3);
+			append(label1, select1);
+
+			for (let i = 0; i < each_blocks_1.length; i += 1) {
+				if (each_blocks_1[i]) {
+					each_blocks_1[i].m(select1, null);
+				}
+			}
+
+			select_option(select1, /*options*/ ctx[0][/*key*/ ctx[30]].step, true);
+			append(div2, t4);
+			append(div2, details);
+			append(details, summary);
+			append(details, t9);
+			append(details, div1);
+
+			for (let i = 0; i < each_blocks.length; i += 1) {
+				if (each_blocks[i]) {
+					each_blocks[i].m(div1, null);
+				}
+			}
+
+			append(details, t10);
+			append(details, small);
 
 			if (!mounted) {
 				dispose = [
-					listen(input0, "change", input0_change_handler_1),
-					listen(input0, "change", /*save*/ ctx[7]),
-					listen(select, "change", select_change_handler_1),
-					listen(select, "change", /*save*/ ctx[7]),
-					listen(input1, "input", input1_input_handler),
-					listen(input1, "change", /*save*/ ctx[7])
+					listen(input, "change", input_change_handler),
+					listen(input, "change", /*save*/ ctx[8]),
+					listen(select0, "change", select0_change_handler),
+					listen(select0, "change", /*save*/ ctx[8]),
+					listen(select1, "change", select1_change_handler),
+					listen(select1, "change", /*save*/ ctx[8])
 				];
 
 				mounted = true;
@@ -1551,22 +1998,55 @@ function create_each_block_1(ctx) {
 		p(new_ctx, dirty) {
 			ctx = new_ctx;
 
-			if (dirty[0] & /*enabled*/ 4 && input0_disabled_value !== (input0_disabled_value = !/*enabled*/ ctx[2])) {
-				input0.disabled = input0_disabled_value;
+			if (dirty[0] & /*enabled*/ 4 && input_disabled_value !== (input_disabled_value = !/*enabled*/ ctx[2])) {
+				input.disabled = input_disabled_value;
 			}
 
 			if (dirty[0] & /*options*/ 1) {
-				input0.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
+				input.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
 			}
 
-			if (dirty[0] & /*options*/ 1 && span_style_value !== (span_style_value = 'color:' + /*options*/ ctx[0][/*key*/ ctx[30]].color)) {
-				attr(span, "style", span_style_value);
+			if (dirty[0] & /*enabled*/ 4 && select0_disabled_value !== (select0_disabled_value = !/*enabled*/ ctx[2])) {
+				select0.disabled = select0_disabled_value;
 			}
 
-			if_block.p(ctx, dirty);
+			if (dirty[0] & /*options*/ 1) {
+				select_option(select0, /*options*/ ctx[0][/*key*/ ctx[30]].level);
+			}
 
 			if (dirty & /*Object*/ 0) {
-				each_value_2 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+				each_value_3 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+				let i;
+
+				for (i = 0; i < each_value_3.length; i += 1) {
+					const child_ctx = get_each_context_3(ctx, each_value_3, i);
+
+					if (each_blocks_1[i]) {
+						each_blocks_1[i].p(child_ctx, dirty);
+					} else {
+						each_blocks_1[i] = create_each_block_3(child_ctx);
+						each_blocks_1[i].c();
+						each_blocks_1[i].m(select1, null);
+					}
+				}
+
+				for (; i < each_blocks_1.length; i += 1) {
+					each_blocks_1[i].d(1);
+				}
+
+				each_blocks_1.length = each_value_3.length;
+			}
+
+			if (dirty[0] & /*enabled*/ 4 && select1_disabled_value !== (select1_disabled_value = !/*enabled*/ ctx[2])) {
+				select1.disabled = select1_disabled_value;
+			}
+
+			if (dirty[0] & /*options*/ 1) {
+				select_option(select1, /*options*/ ctx[0][/*key*/ ctx[30]].step);
+			}
+
+			if (dirty[0] & /*legendStops*/ 64) {
+				each_value_2 = ensure_array_like(/*legendStops*/ ctx[6](/*key*/ ctx[30]));
 				let i;
 
 				for (i = 0; i < each_value_2.length; i += 1) {
@@ -1577,7 +2057,7 @@ function create_each_block_1(ctx) {
 					} else {
 						each_blocks[i] = create_each_block_2(child_ctx);
 						each_blocks[i].c();
-						each_blocks[i].m(select, null);
+						each_blocks[i].m(div1, null);
 					}
 				}
 
@@ -1587,29 +2067,14 @@ function create_each_block_1(ctx) {
 
 				each_blocks.length = each_value_2.length;
 			}
-
-			if (dirty[0] & /*enabled*/ 4 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[2])) {
-				select.disabled = select_disabled_value;
-			}
-
-			if (dirty[0] & /*options*/ 1) {
-				select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].step);
-			}
-
-			if (dirty[0] & /*enabled*/ 4 && input1_disabled_value !== (input1_disabled_value = !/*enabled*/ ctx[2])) {
-				input1.disabled = input1_disabled_value;
-			}
-
-			if (dirty[0] & /*options*/ 1) {
-				set_input_value(input1, /*options*/ ctx[0][/*key*/ ctx[30]].color);
-			}
 		},
 		d(detaching) {
 			if (detaching) {
-				detach(div1);
+				detach(div2);
 			}
 
-			if_block.d();
+			destroy_each(each_blocks_2, detaching);
+			destroy_each(each_blocks_1, detaching);
 			destroy_each(each_blocks, detaching);
 			mounted = false;
 			run_all(dispose);
@@ -1617,7 +2082,7 @@ function create_each_block_1(ctx) {
 	};
 }
 
-// (81:4) {#if status.loading}
+// (88:4) {#if status.loading}
 function create_if_block_3(ctx) {
 	let p;
 
@@ -1638,7 +2103,7 @@ function create_if_block_3(ctx) {
 	};
 }
 
-// (82:4) {#each status.errors as message}
+// (89:4) {#each status.errors as message}
 function create_each_block(ctx) {
 	let p;
 	let t_value = /*message*/ ctx[27] + "";
@@ -1648,7 +2113,7 @@ function create_each_block(ctx) {
 		c() {
 			p = element("p");
 			t = text(t_value);
-			attr(p, "class", "error svelte-1pobaud");
+			attr(p, "class", "error svelte-1vbdnc4");
 			attr(p, "role", "alert");
 		},
 		m(target, anchor) {
@@ -1666,12 +2131,12 @@ function create_each_block(ctx) {
 	};
 }
 
-// (84:55) 
+// (91:55) 
 function create_if_block_2(ctx) {
 	let p;
 
 	let t_value = (/*enabled*/ ctx[2]
-	? 'Tick any layer, or choose Synoptic preset to show all three.'
+	? 'Tick any layer, or choose Synoptic preset to show both layers.'
 	: 'Isolines disabled.') + "";
 
 	let t;
@@ -1680,7 +2145,7 @@ function create_if_block_2(ctx) {
 		c() {
 			p = element("p");
 			t = text(t_value);
-			attr(p, "class", "hint svelte-1pobaud");
+			attr(p, "class", "hint svelte-1vbdnc4");
 		},
 		m(target, anchor) {
 			insert(target, p, anchor);
@@ -1688,7 +2153,7 @@ function create_if_block_2(ctx) {
 		},
 		p(ctx, dirty) {
 			if (dirty[0] & /*enabled*/ 4 && t_value !== (t_value = (/*enabled*/ ctx[2]
-			? 'Tick any layer, or choose Synoptic preset to show all three.'
+			? 'Tick any layer, or choose Synoptic preset to show both layers.'
 			: 'Isolines disabled.') + "")) set_data(t, t_value);
 		},
 		d(detaching) {
@@ -1699,11 +2164,11 @@ function create_if_block_2(ctx) {
 	};
 }
 
-// (83:4) {#if status.validTime && status.active.length}
+// (90:4) {#if status.validTime && status.active.length}
 function create_if_block_1(ctx) {
 	let p;
 	let t0;
-	let t1_value = /*displayTime*/ ctx[6](/*status*/ ctx[5].validTime) + "";
+	let t1_value = /*displayTime*/ ctx[7](/*status*/ ctx[5].validTime) + "";
 	let t1;
 	let small;
 	let t2;
@@ -1720,8 +2185,8 @@ function create_if_block_1(ctx) {
 			t2 = text("GEOS run ");
 			t3 = text(t3_value);
 			t4 = text(" UTC");
-			attr(small, "class", "svelte-1pobaud");
-			attr(p, "class", "stamp svelte-1pobaud");
+			attr(small, "class", "svelte-1vbdnc4");
+			attr(p, "class", "stamp svelte-1vbdnc4");
 			attr(p, "data-testid", "contour-time");
 		},
 		m(target, anchor) {
@@ -1734,7 +2199,7 @@ function create_if_block_1(ctx) {
 			append(small, t4);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*status*/ 32 && t1_value !== (t1_value = /*displayTime*/ ctx[6](/*status*/ ctx[5].validTime) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*status*/ 32 && t1_value !== (t1_value = /*displayTime*/ ctx[7](/*status*/ ctx[5].validTime) + "")) set_data(t1, t1_value);
 			if (dirty[0] & /*status*/ 32 && t3_value !== (t3_value = new Date(/*status*/ ctx[5].runTime).toISOString().slice(0, 16).replace('T', ' ') + "")) set_data(t3, t3_value);
 		},
 		d(detaching) {
@@ -1791,6 +2256,8 @@ function create_fragment(ctx) {
 }
 
 function instance($$self, $$props, $$invalidate) {
+	const legendStops = key => [...CONTOUR_PALETTES[key]].reverse();
+
 	let options = defaultContours(),
 		layer = null,
 		enabled = true,
@@ -1819,8 +2286,7 @@ function instance($$self, $$props, $$invalidate) {
 		$$invalidate(0, options = {
 			...options,
 			gh: { ...options.gh, on: true, level: 500 },
-			temp: { ...options.temp, on: true, level: 850 },
-			mslp: { ...options.mslp, on: true }
+			temp: { ...options.temp, on: true, level: 850 }
 		});
 
 		save();
@@ -1911,23 +2377,18 @@ function instance($$self, $$props, $$invalidate) {
 		$$invalidate(2, enabled);
 	}
 
-	function input0_change_handler_1(key) {
+	function input_change_handler(key) {
 		options[key].on = this.checked;
 		$$invalidate(0, options);
 	}
 
-	function select_change_handler(key) {
+	function select0_change_handler(key) {
 		options[key].level = select_value(this);
 		$$invalidate(0, options);
 	}
 
-	function select_change_handler_1(key) {
+	function select1_change_handler(key) {
 		options[key].step = select_value(this);
-		$$invalidate(0, options);
-	}
-
-	function input1_input_handler(key) {
-		options[key].color = this.value;
 		$$invalidate(0, options);
 	}
 
@@ -1951,6 +2412,7 @@ function instance($$self, $$props, $$invalidate) {
 		timestamp,
 		hidden,
 		status,
+		legendStops,
 		displayTime,
 		save,
 		preset,
@@ -1959,10 +2421,9 @@ function instance($$self, $$props, $$invalidate) {
 		click_handler,
 		click_handler_1,
 		input0_change_handler,
-		input0_change_handler_1,
-		select_change_handler,
-		select_change_handler_1,
-		input1_input_handler,
+		input_change_handler,
+		select0_change_handler,
+		select1_change_handler,
 		input1_change_handler,
 		click_handler_2
 	];
@@ -1971,11 +2432,11 @@ function instance($$self, $$props, $$invalidate) {
 class PluginEntry extends SvelteComponent {
 	constructor(options) {
 		super();
-		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 10 }, add_css, [-1, -1]);
+		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 11 }, add_css, [-1, -1]);
 	}
 
 	get onopen() {
-		return this.$$.ctx[10];
+		return this.$$.ctx[11];
 	}
 }
 
