@@ -53,7 +53,7 @@ export async function decodeNativePixels(mass, optics, scales, count, signal) {
   return result;
 }
 export class NativeForecast {
-  constructor({ base = DATA_BASE, fetcher = fetch, decoder = readPngPixels, cacheSize = 2 } = {}) {
+  constructor({ base = DATA_BASE, fetcher = (...args) => globalThis.fetch(...args), decoder = readPngPixels, cacheSize = 2 } = {}) {
     this.base = base; this.fetcher = fetcher; this.decoder = decoder; this.cacheSize = cacheSize;
     this.cache = new Map(); this.pending = new Map(); this.destroyed = false;
   }

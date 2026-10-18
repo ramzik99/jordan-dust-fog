@@ -64,3 +64,12 @@ test('one cancelled consumer keeps a shared native download alive for others', a
   finish({ value: 42 }); assert.deepEqual(await q, { value: 42 }); assert.equal(calls, 1);
   assert.deepEqual(await service.get(m, m.frames[0]), { value: 42 }); service.destroy();
 });
+test('cancelling every consumer aborts and releases a native request', async () => {
+  const m = fixture(), service = new NativeForecast(); let upstream;
+  service.read = (_m, _d, signal) => { upstream = signal; return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('cancel', 'AbortError')))); };
+  const a = new AbortController(), b = new AbortController();
+  const p = service.get(m, m.frames[0], a.signal), q = service.get(m, m.frames[0], b.signal);
+  a.abort(); b.abort(); await Promise.all([assert.rejects(p), assert.rejects(q)]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(upstream.aborted, true); assert.equal(service.pending.size, 0); assert.equal(service.cache.size, 0); service.destroy();
+});

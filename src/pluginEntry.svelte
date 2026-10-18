@@ -74,7 +74,7 @@
     }
     cancelSeries(); seriesRows = []; seriesDone = 0;
     const lon = wrapLongitude(rawLon); locationError = '';
-    selected = { name: value.name || 'Selected location', lat, lon }; inputLat = lat; inputLon = lon;
+    selected = { name: typeof value.name === 'string' ? value.name.slice(0, 80) : `Point ${lat.toFixed(3)}, ${lon.toFixed(3)}`, lat, lon }; inputLat = lat; inputLon = lon;
     if (pointer) map.removeLayer(pointer);
     if (typeof L !== 'undefined') pointer = L.circleMarker([Math.max(-85, Math.min(85, lat)), lon], { radius: 6, color: '#fff', fillColor: '#183047', fillOpacity: 1, weight: 2 }).addTo(map);
     savePreferences();
