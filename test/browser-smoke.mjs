@@ -129,7 +129,7 @@ try {
     await page.getByRole('button', { name: 'Forecast', exact: true }).click(); await value.filter({ hasText: '40.0' }).waitFor();
     await page.getByLabel('Enable plugin').uncheck(); await value.filter({ hasText: 'Unavailable' }).waitFor();await activeContours('');
     await page.getByLabel('Enable plugin').check(); await value.filter({ hasText: '40.0' }).waitFor();await activeContours('gh:500,mslp:0,temp:850');scenarios++;
-    await page.getByRole('button', { name: 'Minimize panel' }).click(); await page.getByRole('button', { name: /Synoptic Atlas/ }).click();
+    await page.getByRole('button', { name: 'Minimize panel' }).click(); await page.getByRole('button', { name: /GEOS Dust/ }).click();
     manifestFail = true; await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'GEOS forecast unavailable' }).waitFor(); await value.filter({ hasText: 'Unavailable' }).waitFor(); scenarios++;
     await page.evaluate(() => testPlugin.$destroy());

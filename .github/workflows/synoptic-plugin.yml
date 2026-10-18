@@ -1,0 +1,91 @@
+name: Check standalone Synoptic Atlas
+on:
+  push:
+    branches: [main]
+    paths: ['synoptic-atlas/**', 'src/contours.mjs', 'src/forecast.mjs', 'src/globalMap.mjs', 'test/synoptic-browser.mjs', 'scripts/browser_fixture.py', '.github/workflows/synoptic-plugin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - run: ln -s ../node_modules synoptic-atlas/node_modules
+      - run: node --test test/contours.test.mjs
+      - run: npm --prefix synoptic-atlas run build
+      - name: Verify standalone package identity
+        run: |
+          node --input-type=module - <<'JS'
+          import {readFileSync} from 'node:fs';
+          const config=JSON.parse(readFileSync('synoptic-atlas/dist/plugin.json','utf8'));
+          if(config.name!=='windy-plugin-synoptic-atlas'||config.title!=='Synoptic Atlas')throw Error('Wrong plugin configuration');
+          console.log('Verified standalone identity:',config.name,config.title,config.version);
+          JS
+      - run: pip install 'numpy>=2,<3' 'Pillow>=11,<13'
+      - run: python scripts/browser_fixture.py
+      - run: npx playwright install --with-deps chromium
+      - run: node test/synoptic-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synoptic-atlas-browser
+          path: synoptic-atlas/test-output/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synoptic-atlas-plugin
+          path: synoptic-atlas/dist/
+  preview:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: synoptic-standalone-preview
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: preview-site
+      - uses: actions/download-artifact@v4
+        with:
+          name: synoptic-atlas-plugin
+          path: built-plugin
+      - name: Host dedicated standalone plugin
+        shell: bash
+        run: |
+          if git -C preview-site fetch origin synoptic-preview:refs/remotes/origin/synoptic-preview --depth=1; then
+            git -C preview-site switch -C synoptic-preview origin/synoptic-preview
+          else
+            git -C preview-site switch --orphan synoptic-preview
+          fi
+          cp built-plugin/plugin.js preview-site/synoptic-atlas.js
+          cp built-plugin/plugin.min.js preview-site/synoptic-atlas.min.js
+          cp built-plugin/plugin.json preview-site/synoptic-atlas.json
+          cp built-plugin/package.json preview-site/package.json
+          cp built-plugin/plugin.js.map preview-site/plugin.js.map
+          git -C preview-site config user.name 'github-actions[bot]'
+          git -C preview-site config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C preview-site add synoptic-atlas.js synoptic-atlas.min.js synoptic-atlas.json package.json plugin.js.map
+          git -C preview-site commit -m "Standalone Synoptic Atlas from ${GITHUB_SHA}"
+          git -C preview-site push origin HEAD:refs/heads/synoptic-preview
+      - name: Verify dedicated browser-loadable URL
+        run: |
+          export PREVIEW_COMMIT=$(git -C preview-site rev-parse HEAD)
+          python -u - <<'PY'
+          import os, urllib.request
+          url=f"https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@{os.environ['PREVIEW_COMMIT']}/synoptic-atlas.js"
+          with urllib.request.urlopen(url,timeout=60) as response:
+              body=response.read().decode('utf-8')
+              assert 'javascript' in response.headers.get('Content-Type','')
+              assert response.headers.get('Access-Control-Allow-Origin')=='*'
+          assert 'windy-plugin-synoptic-atlas' in body
+          print('Dedicated Synoptic Atlas test URL:',url)
+          print('Standalone identity, JavaScript MIME and browser CORS verified')
+          PY

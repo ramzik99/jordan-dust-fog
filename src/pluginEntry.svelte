@@ -258,10 +258,10 @@
 </script>
 
 {#if hidden}
-  <button class="restore" on:click={() => hidden = false}>🌫 Synoptic Atlas</button>
+  <button class="restore" on:click={() => hidden = false}>🌫 GEOS Dust</button>
 {:else}
-  <section class="panel" aria-label="Synoptic Atlas">
-    <header><div><strong>Synoptic Atlas</strong><small>NASA GEOS-FP · v1.1.0</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
+  <section class="panel" aria-label="GEOS Dust">
+    <header><div><strong>GEOS Dust</strong><small>NASA GEOS-FP · v1.1.1</small></div><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
     <nav aria-label="Dust view"><button class:active={view === 'forecast'} on:click={() => setView('forecast')}>Forecast</button><button class:active={view === 'satellite'} on:click={() => setView('satellite')}>Satellite</button><label><input aria-label="Enable plugin" type="checkbox" bind:checked={enabled} on:change={toggleEnabled} />On</label></nav>
     <details class="contour-controls"><summary>Weather isolines</summary>
       <div class="contour-presets"><button on:click={synopticPreset} disabled={!enabled}>Synoptic preset</button><button on:click={clearContours}>Clear contours</button></div>

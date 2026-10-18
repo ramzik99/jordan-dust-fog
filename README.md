@@ -1,6 +1,8 @@
-# Synoptic Atlas for Windy
+# GEOS Dust for Windy
 
-Unpublished v1.1.0 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP dust forecasts, point threshold guidance, and EUMETSAT satellite dust imagery. No fog features.
+Unpublished v1.1.1 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP dust forecasts, point threshold guidance, and EUMETSAT satellite dust imagery. No fog features.
+
+The separate contour-only plugin is [Synoptic Atlas](synoptic-atlas/README.md), with package ID windy-plugin-synoptic-atlas and a dedicated synoptic-preview build.
 
 ## Features
 
@@ -19,7 +21,7 @@ Unpublished v1.1.0 development preview by Ramzi Kandah. Worldwide NASA GEOS-FP d
 
    https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@preview/plugin.js
 
-3. Open **Synoptic Atlas**. Choose a place or click the map, then select an available interval in **Forecast periods** or on Windy's timeline.
+3. Open **GEOS Dust**. Choose a place or click the map, then select an available interval in **Forecast periods** or on Windy's timeline.
 4. Check all three fields, change the point threshold, and try coordinates near the date line. Under **Point forecast**, load the complete table only when wanted; native frames can total tens of MB.
 5. Select **Satellite**, choose the source, and check the observation timestamp. Satellite RGB supports visual tracking and does not supply surface concentration.
 
