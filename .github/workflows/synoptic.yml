@@ -1,0 +1,50 @@
+name: Refresh GEOS synoptic contours
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/ingest_synoptic.py', '.github/workflows/synoptic.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '45 4,10,16,22 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: geos-synoptic-data
+  cancel-in-progress: true
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          path: publisher
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Restore previous generated contour data
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          SYNOPTIC_HEAD=$(git -C publisher ls-remote --heads origin refs/heads/geos-synoptic-data | awk '{print $1}')
+          echo "SYNOPTIC_HEAD=$SYNOPTIC_HEAD" >> "$GITHUB_ENV"
+          if [ -n "$SYNOPTIC_HEAD" ]; then
+            git -C publisher fetch --depth=1 origin refs/heads/geos-synoptic-data
+            test "$(git -C publisher rev-parse FETCH_HEAD)" = "$SYNOPTIC_HEAD"
+            git -C publisher archive FETCH_HEAD | tar -x -C generated
+          fi
+      - run: python -u scripts/ingest_synoptic.py --output generated/contours
+      - name: Publish generated contour data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C publisher switch --orphan next-geos-synoptic-data
+          cp -R generated/contours publisher/contours
+          git -C publisher config user.name 'github-actions[bot]'
+          git -C publisher config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C publisher add contours
+          git -C publisher commit -m "Validated GEOS-FP synoptic contour fields"
+          git -C publisher push --force-with-lease="refs/heads/geos-synoptic-data:${SYNOPTIC_HEAD}" origin HEAD:refs/heads/geos-synoptic-data
