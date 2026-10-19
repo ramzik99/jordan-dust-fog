@@ -71,7 +71,7 @@
 {/if}
 </div>
 <style>
-  .atlas-controls{position:fixed;left:12px;bottom:95px;z-index:10000;isolation:isolate;width:280px;max-width:calc(100vw - 24px);font:12px/1.4 system-ui,sans-serif;color:#f0f5f8}
+  .atlas-controls{position:fixed;left:12px;bottom:95px;z-index:10000;isolation:isolate;pointer-events:auto;width:280px;max-width:calc(100vw - 24px);font:12px/1.4 system-ui,sans-serif;color:#f0f5f8}
   .panel,.restore{background:#142536;border:1px solid #526879;border-radius:12px;box-shadow:0 5px 20px #0005}.panel{padding:12px;max-height:calc(100dvh - 180px);overflow:auto;box-sizing:border-box}header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}header strong{font-size:17px}.restore{padding:10px}
   button,select,input{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:6px;padding:5px 7px}button,select,summary{cursor:pointer}button:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #ffd166;outline-offset:2px}input[type=checkbox]{accent-color:#ffd166;width:15px;height:15px;margin:0}
   .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0}.row label{font-size:12px}label{display:flex;align-items:center;gap:7px}.row select{font-size:11px;min-width:88px}.stamp{font-size:11px;color:#bdccd9;margin:8px 0}.error{background:#692f30;padding:8px;border-radius:6px;font-size:11px}p[role=status]{font-size:11px}.more{border-top:1px solid #42586b;margin-top:8px;padding-top:8px}summary{font-size:11px}.toolbar,.switches{display:flex;gap:8px;align-items:center;margin:10px 0}.switches button{margin-left:auto}button{font-size:11px}.spacing{justify-content:space-between;margin:10px 0;font-size:11px}small{display:block;font-size:10px;color:#bbcad6;margin-top:10px}
@@ -80,7 +80,15 @@
     .atlas-controls:global(.mobile-docked){position:relative;left:auto;bottom:auto;width:auto;margin:4px 8px calc(8px + env(safe-area-inset-bottom,0px));max-width:none}
     .panel{padding:8px 10px;max-height:50dvh;border-radius:9px}
     header{margin-bottom:2px}header strong{font-size:14px}
-    .row{padding:4px 0}.row select{min-height:32px}
+    .row{padding:2px 0}.row label{min-height:44px;font-size:13px;flex:1}
+    .row select{min-height:44px;min-width:108px;font-size:16px}
+    input[type=checkbox]{width:22px;height:22px;flex-shrink:0}
+    button,select,label,summary{pointer-events:auto;touch-action:manipulation}
+    button,summary{min-height:44px;box-sizing:border-box}
+    button{font-size:13px}header button{min-width:44px}
+    .switches label{min-height:44px}.spacing select{min-height:44px;font-size:16px}
+    .panel{touch-action:pan-y;overscroll-behavior:contain}
+    label,button,summary{-webkit-user-select:none;user-select:none}
     .stamp{display:inline-block;margin:4px 0;font-size:10px}
     .more{margin-top:4px;padding-top:4px}summary{font-size:11px}
     .restore{padding:8px 10px}

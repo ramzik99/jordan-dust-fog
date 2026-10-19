@@ -3,12 +3,13 @@ import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const manifest=JSON.parse(await readFile('test-fixture/contours/latest.json','utf8'));
-const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column}#timeline{height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"><div class="maplibregl-canvas-container"><canvas data-weather-map></canvas></div><button id="windy-menu" style="position:absolute;top:20px;left:20px;z-index:10;background:#182c40;color:white;padding:16px">Windy menu</button></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column;pointer-events:none}#timeline{pointer-events:auto;height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"><div class="maplibregl-canvas-container"><canvas data-weather-map></canvas></div><button id="windy-menu" style="position:absolute;top:20px;left:20px;z-index:10;background:#182c40;color:white;padding:16px">Windy menu</button></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
 const events=new Map(),listeners=new Map(),container=document.querySelector('#map');let timestamp=${Date.parse(manifest.frames.find(f=>Date.parse(f.validTime)>=Date.now()-5400000).validTime)};
 const mercator=lat=>Math.log(Math.tan(Math.PI/4+Math.max(-85.051,Math.min(85.051,lat))*Math.PI/360));
 const map={getContainer:()=>container,getSize:()=>({x:innerWidth,y:innerHeight}),getBounds:()=>({getWest:()=>10,getEast:()=>65}),latLngToContainerPoint:([lat,lon])=>({x:(lon-10)/55*innerWidth,y:(mercator(55)-mercator(lat))/(mercator(55)-mercator(5))*innerHeight}),on:(name,fn)=>{if(!events.has(name))events.set(name,new Set());events.get(name).add(fn)},off:(name,fn)=>events.get(name)?.delete(fn)};
 const store={get:()=>timestamp,set:(name,value)=>{timestamp=value;for(const fn of listeners.values())fn()},on:(name,fn)=>{const key=Symbol();listeners.set(key,fn);return key},off:key=>listeners.delete(key)};
-window.W={map:{map},store};window.testHost={store,events,listeners};const mod=await import('/plugin.js');
+window.W={map:{map},store};window.testHost={store,events,listeners,hostInputs:0};
+for(const name of ['pointerdown','touchstart','click'])document.querySelector('#bottom-wrapper').addEventListener(name,event=>{testHost.hostInputs++;event.preventDefault();},{passive:false});const mod=await import('/plugin.js');
 if(mod.__pluginConfig.name!=='windy-plugin-synoptic-atlas')throw Error('Wrong plugin identity: '+mod.__pluginConfig.name);
 window.testPlugin=new mod.default({target:document.querySelector('#plugin')});
 </script></body></html>`;
@@ -17,7 +18,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));await mkdir('te
 const browser=await chromium.launch({headless:true});let currentPage,scenarios=0;
 try{
   for(const viewport of [{width:1365,height:1000},{width:390,height:844}]){
-    const context=await browser.newContext({viewport}),page=await context.newPage(),errors=[];currentPage=page;let fail='';
+    const context=await browser.newContext({viewport,hasTouch:viewport.width<=600,isMobile:viewport.width<=600}),page=await context.newPage(),errors=[];currentPage=page;let fail='';
     page.on('pageerror',error=>{errors.push(String(error));console.error(String(error))});
     await page.route('https://raw.githubusercontent.com/**',async route=>{
       const url=new URL(route.request().url());
@@ -31,7 +32,25 @@ try{
     assert.doesNotMatch(await page.locator('body').innerText(),/dust|satellite|mslp|mean sea level|geos|nasa/i);
     assert.equal(await page.locator('[data-geos-dust]').count(),0);scenarios++;
     const active=expected=>page.waitForFunction(expected=>document.querySelector('[data-synoptic-contours]')?.dataset.layers===expected,expected);
-    await page.locator('.more > summary').click();
+    if(viewport.width<=600){
+      const gh=page.locator('.row label').first(),temp=page.locator('.row label').last();
+      assert.ok(await gh.evaluate(el=>el.getBoundingClientRect().height>=44),'Layer toggles need 44px touch targets');
+      assert.ok(await page.getByLabel('Temperature pressure level').evaluate(el=>el.getBoundingClientRect().height>=44));
+      await gh.tap();await active('gh:500');await temp.tap();await active('gh:500,temp:850');
+      await temp.tap();await active('gh:500');await gh.tap();await active('');
+      await page.locator('.more > summary').tap();
+      await page.getByLabel('Contour labels',{exact:true}).tap();
+      assert.equal(await page.getByLabel('Contour labels',{exact:true}).isChecked(),false);
+      await page.getByLabel('Contour labels',{exact:true}).tap();
+      await page.getByRole('button',{name:'Minimize panel'}).tap();
+      await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).tap();
+      assert.equal(await page.evaluate(()=>testHost.hostInputs),0,'Control taps must not reach timeline gesture handlers');
+      await page.locator('#timeline').tap();
+      assert.ok(await page.evaluate(()=>testHost.hostInputs)>0,'Timeline must retain its own input handling');
+      scenarios++;
+    } else {
+      await page.locator('.more > summary').click();
+    }
     await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,temp:850');scenarios++;
     assert.equal(await page.locator('.atlas-controls').evaluate(el=>el.parentElement.id),viewport.width<=600?'bottom-wrapper':'');
     assert.equal(await page.locator('.row').first().evaluate(el=>{
