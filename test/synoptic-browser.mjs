@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const manifest=JSON.parse(await readFile('test-fixture/contours/latest.json','utf8'));
-const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}</style></head><body><div id="map"></div><div id="plugin"></div><script type="module">
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column}#timeline{height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
 const events=new Map(),listeners=new Map(),container=document.querySelector('#map');let timestamp=${Date.parse(manifest.frames.find(f=>Date.parse(f.validTime)>=Date.now()-5400000).validTime)};
 const mercator=lat=>Math.log(Math.tan(Math.PI/4+Math.max(-85.051,Math.min(85.051,lat))*Math.PI/360));
 const map={getContainer:()=>container,getSize:()=>({x:innerWidth,y:innerHeight}),getBounds:()=>({getWest:()=>10,getEast:()=>65}),latLngToContainerPoint:([lat,lon])=>({x:(lon-10)/55*innerWidth,y:(mercator(55)-mercator(lat))/(mercator(55)-mercator(5))*innerHeight}),on:(name,fn)=>{if(!events.has(name))events.set(name,new Set());events.get(name).add(fn)},off:(name,fn)=>events.get(name)?.delete(fn)};
@@ -33,7 +33,7 @@ try{
     const active=expected=>page.waitForFunction(expected=>document.querySelector('[data-synoptic-contours]')?.dataset.layers===expected,expected);
     await page.locator('.more > summary').click();
     await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,temp:850');scenarios++;
-    assert.equal(await page.locator('.atlas-controls').evaluate(el=>el.parentElement===document.body),true);
+    assert.equal(await page.locator('.atlas-controls').evaluate(el=>el.parentElement.id),viewport.width<=600?'bottom-wrapper':'');
     assert.equal(await page.locator('.row').first().evaluate(el=>{
       const rect=el.getBoundingClientRect();const top=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
       return !!top?.closest('.panel');
@@ -44,13 +44,8 @@ try{
     }
     await page.getByLabel('Geopotential height pressure level').selectOption('700');await active('gh:700,temp:850');
     await page.getByLabel('Temperature pressure level').selectOption('500');await active('gh:700,temp:500');scenarios++;
-    await page.getByText('Temperature colors (°C)',{exact:true}).click();
-    await page.getByLabel('Temperature color legend').waitFor();
-    assert.equal(await page.getByLabel('Temperature color legend').locator('.swatch').count(),41);
-    await page.getByText('Temperature colors (°C)',{exact:true}).click();
-    await page.getByText('Geopotential height colors (dam)',{exact:true}).click();
-    assert.equal(await page.getByLabel('Geopotential height color legend').locator('.swatch').count(),66);
-    await page.getByText('Geopotential height colors (dam)',{exact:true}).click();scenarios++;
+    assert.equal(await page.locator('.legend,.scale,.swatch').count(),0);
+    assert.doesNotMatch(await page.locator('.panel').innerText(),/color legend|colors/i);scenarios++;
     await page.getByLabel('Geopotential height contour spacing').selectOption('12');
     await page.getByLabel('Contour labels',{exact:true}).uncheck();await page.getByLabel('Contour labels',{exact:true}).check();await active('gh:700,temp:500');scenarios++;
     fail='temp';await page.getByLabel('Temperature pressure level').selectOption('300');
@@ -68,6 +63,23 @@ try{
     await page.getByRole('button',{name:'Synoptic preset',exact:true}).click();await active('gh:500,temp:850');scenarios++;
     await page.locator('.more > summary').click();
     assert.ok(await page.locator('.panel').evaluate(el=>el.getBoundingClientRect().height<250),'Compact panel should stay below 250px');
+    if(viewport.width<=600){
+      const belowTimeline=()=>page.evaluate(()=>{
+        const timeline=document.querySelector('#timeline').getBoundingClientRect(),dock=document.querySelector('.atlas-controls').getBoundingClientRect();
+        return dock.top>=timeline.bottom && dock.bottom<=innerHeight && dock.left>=0 && dock.right<=innerWidth;
+      });
+      assert.equal(await belowTimeline(),true,'Mobile controller must be below timeline and within screen');
+      await page.setViewportSize({width:844,height:390});
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement===document.body);
+      await page.setViewportSize(viewport);
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement.id==='bottom-wrapper');
+      assert.equal(await belowTimeline(),true,'Dock should recover after rotation');
+      await page.evaluate(()=>document.querySelector('#bottom-wrapper').remove());
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement===document.body);
+      await page.evaluate(()=>document.body.insertAdjacentHTML('beforeend','<section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section>'));
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement.id==='bottom-wrapper');
+      assert.equal(await belowTimeline(),true,'Dock should recover after timeline remount');scenarios++;
+    }
     await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`test-output/standalone-${viewport.width}.png`});
     await page.getByRole('button',{name:'Minimize panel'}).click();await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).click();scenarios++;
     await page.evaluate(()=>testPlugin.$destroy());assert.equal(await page.locator('[data-synoptic-contours]').count(),0);

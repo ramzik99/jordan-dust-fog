@@ -4,8 +4,8 @@
   import store from '@windy/store';
   import config from './pluginConfig';
   import { ContourOverlay, CONTOUR_FIELDS, PRESSURE_LEVELS, defaultContours, safeContourOptions } from './contours.mjs';
-  import { CONTOUR_PALETTES } from './contourPalettes.mjs';
-  const legendStops = (key: string) => [...CONTOUR_PALETTES[key]].reverse();
+  import { mountControllerDock } from './controllerDock.mjs';
+  let releaseDock = () => {};
   let controls: HTMLDivElement;
   let options: any = defaultContours(), layer: any = null, enabled = true, hidden = false, destroyed = false;
   let timestamp = Date.now(), status: any = { loading: false, errors: [], active: [] };
@@ -24,7 +24,7 @@
   }
   export const onopen = () => { hidden = false; };
   onMount(() => {
-    document.body.appendChild(controls);
+    releaseDock = mountControllerDock(controls);
     try { options = safeContourOptions(JSON.parse(localStorage.getItem('synoptic-atlas.options.v1') || 'null')); } catch {}
     timestamp = Number(store.get('timestamp')) || Date.now();
     layer = new ContourOverlay({ map, onChange: value => { status = value; }, onRender: render });
@@ -35,6 +35,7 @@
     clock = setInterval(render, 60000); render();
   });
   onDestroy(() => {
+    releaseDock();
     controls?.remove();
     destroyed = true; layer?.destroy(); layer = null; if (animation) cancelAnimationFrame(animation);
     clearInterval(timer); clearInterval(clock); observer?.disconnect();
@@ -63,11 +64,6 @@
       <div class="switches"><label><input aria-label="Enable isolines" type="checkbox" bind:checked={enabled} />On</label><label><input aria-label="Contour labels" type="checkbox" bind:checked={options.labels} on:change={save} />Labels</label><button on:click={() => layer?.refresh()} disabled={!enabled || status.loading}>Refresh</button></div>
       {#each Object.keys(CONTOUR_FIELDS) as key}
         <label class="spacing">{key === 'gh' ? 'Height interval' : 'Temperature interval'}<select aria-label={CONTOUR_FIELDS[key].label + ' contour spacing'} bind:value={options[key].step} on:change={save} disabled={!enabled}>{#each CONTOUR_FIELDS[key].steps as step}<option value={step}>{step} {key === 'temp' ? '°C' : 'dam'}</option>{/each}</select></label>
-        <details class="legend"><summary>{CONTOUR_FIELDS[key].label} colors ({key === 'temp' ? '°C' : 'dam'})</summary>
-          <div class="scale" aria-label={CONTOUR_FIELDS[key].label + ' color legend'}>
-            {#each legendStops(key) as [value, color]}<div class="swatch"><span style={'background:' + color}></span><b>{value}</b></div>{/each}
-          </div>
-        </details>
       {/each}
       <small>Times use your device timezone. Height in dam; temperature in °C.</small>
     </details>
@@ -78,6 +74,15 @@
   .atlas-controls{position:fixed;left:12px;bottom:95px;z-index:10000;isolation:isolate;width:280px;max-width:calc(100vw - 24px);font:12px/1.4 system-ui,sans-serif;color:#f0f5f8}
   .panel,.restore{background:#142536;border:1px solid #526879;border-radius:12px;box-shadow:0 5px 20px #0005}.panel{padding:12px;max-height:calc(100dvh - 180px);overflow:auto;box-sizing:border-box}header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}header strong{font-size:17px}.restore{padding:10px}
   button,select,input{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:6px;padding:5px 7px}button,select,summary{cursor:pointer}button:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #ffd166;outline-offset:2px}input[type=checkbox]{accent-color:#ffd166;width:15px;height:15px;margin:0}
-  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0}.row label{font-size:12px}label{display:flex;align-items:center;gap:7px}.row select{font-size:11px;min-width:88px}.stamp{font-size:11px;color:#bdccd9;margin:8px 0}.error{background:#692f30;padding:8px;border-radius:6px;font-size:11px}p[role=status]{font-size:11px}.more{border-top:1px solid #42586b;margin-top:8px;padding-top:8px}summary{font-size:11px}.toolbar,.switches{display:flex;gap:8px;align-items:center;margin:10px 0}.switches button{margin-left:auto}button{font-size:11px}.spacing{justify-content:space-between;margin:10px 0;font-size:11px}.legend{margin:8px 0}.scale{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 8px;margin:8px 0}.swatch{display:flex;align-items:center;gap:5px;font-size:10px}.swatch span{display:block;width:24px;height:9px;border:1px solid #789}.swatch b{font-weight:500}small{display:block;font-size:10px;color:#bbcad6;margin-top:10px}
-  @media(max-width:600px){.atlas-controls{bottom:100px;width:270px}.panel{max-height:70dvh}}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0}.row label{font-size:12px}label{display:flex;align-items:center;gap:7px}.row select{font-size:11px;min-width:88px}.stamp{font-size:11px;color:#bdccd9;margin:8px 0}.error{background:#692f30;padding:8px;border-radius:6px;font-size:11px}p[role=status]{font-size:11px}.more{border-top:1px solid #42586b;margin-top:8px;padding-top:8px}summary{font-size:11px}.toolbar,.switches{display:flex;gap:8px;align-items:center;margin:10px 0}.switches button{margin-left:auto}button{font-size:11px}.spacing{justify-content:space-between;margin:10px 0;font-size:11px}small{display:block;font-size:10px;color:#bbcad6;margin-top:10px}
+  @media(max-width:600px){
+    .atlas-controls{left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:calc(100vw - 16px);max-width:none}
+    .atlas-controls.mobile-docked{position:relative;left:auto;bottom:auto;width:auto;margin:4px 8px calc(8px + env(safe-area-inset-bottom,0px));max-width:none}
+    .panel{padding:8px 10px;max-height:50dvh;border-radius:9px}
+    header{margin-bottom:2px}header strong{font-size:14px}
+    .row{padding:4px 0}.row select{min-height:32px}
+    .stamp{display:inline-block;margin:4px 0;font-size:10px}
+    .more{margin-top:4px;padding-top:4px}summary{font-size:11px}
+    .restore{padding:8px 10px}
+  }
 </style>
