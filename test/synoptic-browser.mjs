@@ -88,7 +88,7 @@ try{
     await page.getByRole('alert').filter({hasText:'Temperature: HTTP 503'}).waitFor();await active('gh:700');
     await page.evaluate(()=>testHost.fail='');await page.getByRole('button',{name:'Refresh',exact:true}).click();await active('gh:700,temp:300');scenarios++;
     await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames.at(-1).validTime)+10800000);
-    await page.getByRole('alert').filter({hasText:'Outside selected model forecast range'}).waitFor();await active('');
+    await page.getByRole('alert').filter({hasText:'Outside selected model forecast range'}).first().waitFor();await active('');
     await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.frames.find(f=>Date.parse(f.validTime)>=Date.now()-5400000).validTime));await active('gh:700,temp:300');scenarios++;
     await page.evaluate(t=>testHost.store.set('timestamp',t),Date.parse(manifest.runTime)+360*3600000);
     await active('gh:700,temp:300');
