@@ -2,15 +2,17 @@ import { chromium } from 'playwright';
 import {readFile,mkdir} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const coreURL='data:text/javascript;base64,'+(await readFile('src/windyContourData.mjs')).toString('base64');
+const readerURL='data:text/javascript;base64,'+(await readFile('src/windyTileReader.mjs')).toString('base64');
 const pluginURL='data:text/javascript;base64,'+(await readFile('dist/plugin.js')).toString('base64');
 const browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader','--use-angle=swiftshader']});
 const page=await browser.newPage({viewport:{width:1365,height:1000}});
 try{
  await page.goto('https://www.windy.com/?35,30,4',{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.W?.renderUtils?.createFullRenderingParams&&window.W?.products?.ecmwf,null,{timeout:60000});
- const result=await page.evaluate(async(coreURL)=>{
+ const result=await page.evaluate(async({coreURL,readerURL})=>{
   const {createTileContourProvider}=await import(coreURL);
-  const provider=createTileContourProvider({products:W.products,createParams:W.renderUtils.createFullRenderingParams,getDataZoom:W.renderUtils.getDataZoom,Interpolator:W.tileInterpolator.TileLayerInterpolator,tiles:W.tileLayerSource.tileLayerSource,applyUrlTemplate:W.tileHelpers.applyUrlTemplate});
+  const {createWindyTileReader,sampleTile}=await import(readerURL);
+  const provider=createTileContourProvider({products:W.products,createParams:W.renderUtils.createFullRenderingParams,getDataZoom:W.renderUtils.getDataZoom,tiles:createWindyTileReader(W.tileLayerSource),sampleTile,applyUrlTemplate:W.tileHelpers.applyUrlTemplate});
   const native=W.map.map,results=[];
   const map={getBounds:()=>({getWest:()=>30,getEast:()=>40,getSouth:()=>25,getNorth:()=>40}),getSize:()=>({x:90,y:90}),getZoom:()=>native.getZoom(),maplibreMap:native.maplibreMap};
   try{
@@ -28,7 +30,7 @@ try{
    }
    return results;
   }finally{provider.destroy()}
- },coreURL);
+ },{coreURL,readerURL});
  assert.equal(result.length,10);
  assert.ok(result.every(r=>r.valid>0&&Number.isFinite(Date.parse(r.validTime))));
  console.log('LIVE WINDY PROVIDER CHECKS',JSON.stringify(result,null,2));

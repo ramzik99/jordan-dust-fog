@@ -1,3 +1,4 @@
+import {sampleTile} from '../src/windyTileReader.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createTileContourProvider,viewportGrid,scalarValue,wrapLongitude,windyPathTime} from '../src/windyContourData.mjs';
@@ -48,4 +49,14 @@ test('a cancelled request settles even when host calendar never resolves',async(
 test('Windy compact and legacy forecast paths decode to the actual valid time',()=>{
  for(const path of ['2026101912','2026/10/19/12','202610191200'])assert.equal(windyPathTime(path),Date.parse('2026-10-19T12:00:00Z'));
  assert.ok(Number.isNaN(windyPathTime('not-a-time')));
+});
+
+test('tile decoder matches native bilinear scalar interpolation and transparency',()=>{
+ const tile={valid:true,width:2,height:2,header:{decoderRmin:200,decoderRstep:.5},pixels:new Uint8ClampedArray([0,0,0,255,20,0,0,255,40,0,0,255,60,0,0,255])};
+ assert.equal(sampleTile(tile,{}, {x:.5,y:.5})[0],215);
+ assert.equal(sampleTile(tile,{transformR:x=>x*2},{x:.5,y:.5})[0],430);
+ tile.pixels[3]=0;assert.equal(sampleTile(tile,{PNGtransparency:true},{x:.5,y:.5}),null);
+ tile.pixels[3]=255;tile.pixels[6]=200;
+ assert.equal(sampleTile(tile,{JPGtransparency:true},{x:.5,y:.5}),null);
+ assert.equal(sampleTile({valid:false},{},{x:0,y:0}),null);
 });

@@ -29,7 +29,7 @@ export function scalarValue(raw,field) {
   if(field==='gh')return value>=-1000&&value<=60000?value/10:NaN;
   return value>=100&&value<=400?value-273.15:NaN;
 }
-export function createTileContourProvider({products,createParams,getDataZoom,Interpolator,tiles,applyUrlTemplate}) {
+export function createTileContourProvider({products,createParams,getDataZoom,Interpolator,tiles,applyUrlTemplate,sampleTile}) {
   let dead=false;
   const active=new Set();
   return {
@@ -52,9 +52,12 @@ export function createTileContourProvider({products,createParams,getDataZoom,Int
         if(params.product!==product||params.level!==nativeLevel)throw Error('Windy returned a different model or pressure level');
         const validTime=windyPathTime(params.path);
         if(!Number.isFinite(validTime))throw Error('Forecast time unavailable');
-        interpolator=new Interpolator();
-        const sample=await checked(new Promise(resolve=>interpolator.createFun(resolve)),abort.signal);
-        if(typeof sample!=='function')throw Error('Windy tile reader unavailable');
+        let sample;
+        if(!sampleTile){
+          interpolator=new Interpolator();
+          sample=await checked(new Promise(resolve=>interpolator.createFun(resolve)),abort.signal);
+          if(typeof sample!=='function')throw Error('Windy tile reader unavailable');
+        }
         const zoom=map.maplibreMap?.getZoom?.()??map.getZoom()-1;
         const tileZoom=Math.round(Math.max(2,Math.min(10,zoom)))+1;
         const z=getDataZoom(params,tileZoom), scale=2**z, grid=viewportGrid(map);
@@ -71,7 +74,9 @@ export function createTileContourProvider({products,createParams,getDataZoom,Int
             if(!pending){pending=tiles.get(url,abort.signal);tokens.set(url,pending);}
             const token=await checked(pending,abort.signal);
             if(!token?.value?.valid)continue;
-            values[at]=scalarValue(await checked(sample({lat,lon},abort,params),abort.signal),field);
+            const mx=(lon+180)/360*scale,my=(1-Math.log(Math.tan(phi)+1/Math.cos(phi))/Math.PI)/2*scale;
+            const raw=sampleTile?sampleTile(token.value,params,{x:(mx-Math.floor(mx))*256,y:(my-Math.floor(my))*256}):await checked(sample({lat,lon},abort,params),abort.signal);
+            values[at]=scalarValue(raw,field);
           }
         }));
         if(abort.signal.aborted)throw interrupted();
@@ -83,6 +88,6 @@ export function createTileContourProvider({products,createParams,getDataZoom,Int
         for(const pending of tokens.values())void pending.then(token=>{if(token)tiles.free(token);},()=>{});
       }
     },
-    destroy(){dead=true;for(const abort of active)abort.abort();active.clear();}
+    destroy(){dead=true;for(const abort of active)abort.abort();active.clear();tiles.destroy?.();}
   };
 }
