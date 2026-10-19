@@ -12,7 +12,7 @@ jobs:
           curl -fsS https://www.windy.com/v/51.3.2.ind.81aa/index.js -o /tmp/windy.js
           python - <<'PY'
           s=open('/tmp/windy.js').read()
-          for key in ['function Jv(', 'Jv=', 'function qv(', 'qv=', 'function Rv(', 'function nv(']:
+          for key in ['Rv=', 'xv=y(', 'decodeImageBlob:', 'function yr(']:
               i=s.find(key)
-              if i>=0:print('SOURCE',key,s[i:i+4000])
+              if i>=0:print('SOURCE',key,s[max(0,i-100):i+4000])
           PY
