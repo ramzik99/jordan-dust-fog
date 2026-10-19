@@ -1,6 +1,6 @@
 const __pluginConfig =  {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "icon": "🌐",
   "title": "Synoptic Atlas",
   "description": "Independent geopotential height and temperature isolines, with pressure levels and labels.",
@@ -10,8 +10,8 @@ const __pluginConfig =  {
   "mobileUI": "small",
   "addToContextmenu": false,
   "listenToSingleclick": false,
-  "built": 1792404129466,
-  "builtReadable": "2026-10-19T10:02:09.466Z"
+  "built": 1792405756087,
+  "builtReadable": "2026-10-19T10:29:16.087Z"
 };
 
 // transformCode: import { map } from '@windy/map';
@@ -22,6 +22,21 @@ const store = W.store;
 
 // transformCode: import broadcast from '@windy/broadcast';
 const broadcast = W.broadcast;
+
+// transformCode: import products from '@windy/products';
+const products = W.products;
+
+// transformCode: import { createFullRenderingParams, getDataZoom } from '@windy/renderUtils';
+const { createFullRenderingParams, getDataZoom } = W.renderUtils;
+
+// transformCode: import { TileLayerInterpolator } from '@windy/tileInterpolator';
+const { TileLayerInterpolator } = W.tileInterpolator;
+
+// transformCode: import { tileLayerSource } from '@windy/tileLayerSource';
+const { tileLayerSource } = W.tileLayerSource;
+
+// transformCode: import { applyUrlTemplate } from '@windy/tileHelpers';
+const { applyUrlTemplate } = W.tileHelpers;
 
 
 /** @returns {void} */
@@ -673,6 +688,95 @@ const config = {
     name: 'windy-plugin-synoptic-atlas',
     title: 'Synoptic Atlas'};
 
+// Windy tile sampling: model metadata and native decoded scalar fields, no external forecast fallback.
+const wrapLongitude = lon => ((lon + 180) % 360 + 360) % 360 - 180;
+function viewportGrid(map) {
+  const b=map.getBounds(), size=map.getSize();
+  const west=wrapLongitude(b.getWest()), span=Math.min(360,Math.max(.001,b.getEast()-b.getWest()));
+  const south=Math.max(-85,Math.min(85,b.getSouth())), north=Math.max(south+.001,Math.min(85,b.getNorth()));
+  const width=Math.max(3,Math.min(97,Math.ceil(size.x/18)+1));
+  const height=Math.max(3,Math.min(73,Math.ceil(size.y/18)+1));
+  return {width,height,longitudeStart:west,latitudeStart:south,step:span/(width-1),latitudeStep:(north-south)/(height-1),periodic:false};
+}
+function interrupted() { return new DOMException('Request cancelled','AbortError'); }
+function checked(promise, signal) {
+  if(signal.aborted) return Promise.reject(interrupted());
+  return new Promise((resolve,reject)=>{
+    const stop=()=>{signal.removeEventListener('abort',stop);reject(interrupted());};
+    signal.addEventListener('abort',stop,{once:true});
+    Promise.resolve(promise).then(value=>{signal.removeEventListener('abort',stop);resolve(value);},error=>{signal.removeEventListener('abort',stop);reject(error);});
+  });
+}
+function scalarValue(raw,field) {
+  const value=Array.isArray(raw)?raw[0]:NaN;
+  if(typeof value!=='number'||!Number.isFinite(value))return NaN;
+  // Native gh scalar is geopotential height in metres; temperature is Kelvin.
+  if(field==='gh')return value>=-1e3&&value<=60000?value/10:NaN;
+  return value>=100&&value<=400?value-273.15:NaN;
+}
+function createTileContourProvider({products,createParams,getDataZoom,Interpolator,tiles,applyUrlTemplate}) {
+  let dead=false;
+  const active=new Set();
+  return {
+    async load({map,product,timestamp,field,level,abort:parent}) {
+      if(dead)throw interrupted();
+      const model=products[product], nativeLevel=level+'h';
+      if(!model || !['gh','temp'].includes(field))throw Error('Selected model is unavailable');
+      if(field==='gh'?!model.isolines?.includes('gh'):!model.overlays?.includes('temp'))throw Error('Not available for '+(model.modelName||product));
+      const levels=model.levelsOverride?.[field]||model.levels;
+      if(!levels?.includes(nativeLevel))throw Error(nativeLevel+' is not available for '+(model.modelName||product));
+      const abort=new AbortController(), stop=()=>abort.abort();
+      parent.signal.addEventListener('abort',stop,{once:true});if(parent.signal.aborted)stop();
+      active.add(abort);
+      const tokens=new Map();let interpolator;
+      try {
+        const calendar=await checked(model.getCalendar(),abort.signal);
+        const times=calendar?.timestamps;
+        if(!Array.isArray(times)||!times.length||!Number.isFinite(timestamp)||timestamp<times[0]||timestamp>times.at(-1))throw Error('Outside selected model forecast range');
+        const params=await checked(createParams(field,{product,overlay:field,level:nativeLevel},timestamp),abort.signal);
+        if(params.product!==product||params.level!==nativeLevel)throw Error('Windy returned a different model or pressure level');
+        const validTime=Date.parse(params.path.replace(/^(\d{4})\/(\d\d)\/(\d\d)\/(\d\d)$/,'$1-$2-$3T$4:00:00Z'));
+        if(!Number.isFinite(validTime))throw Error('Forecast time unavailable');
+        interpolator=new Interpolator();
+        const sample=await checked(new Promise(resolve=>interpolator.createFun(resolve)),abort.signal);
+        if(typeof sample!=='function')throw Error('Windy tile reader unavailable');
+        const zoom=map.maplibreMap?.getZoom?.()??map.getZoom()-1;
+        const tileZoom=Math.round(Math.max(2,Math.min(10,zoom)))+1;
+        const z=getDataZoom(params,tileZoom), scale=2**z, grid=viewportGrid(map);
+        const values=new Float32Array(grid.width*grid.height).fill(NaN);
+        let index=0;
+        await Promise.all(Array.from({length:8},async()=>{
+          while(index<values.length && !abort.signal.aborted){
+            const at=index++, x=at%grid.width,y=Math.floor(at/grid.width);
+            const lat=grid.latitudeStart+y*grid.latitudeStep,lon=wrapLongitude(grid.longitudeStart+x*grid.step);
+            if(model.pointIsInBounds&&!model.pointIsInBounds({lat,lon}))continue;
+            const phi=lat*Math.PI/180;
+            const url=applyUrlTemplate(params.fullPath,{z,x:Math.floor((lon+180)/360*scale),y:Math.floor((1-Math.log(Math.tan(phi)+1/Math.cos(phi))/Math.PI)/2*scale)});
+            let pending=tokens.get(url);
+            if(!pending){pending=tiles.get(url,abort.signal);tokens.set(url,pending);}
+            const token=await checked(pending,abort.signal);
+            if(!token?.value?.valid)continue;
+            values[at]=scalarValue(await checked(sample({lat,lon},abort,params),abort.signal),field);
+          }
+        }));
+        if(abort.signal.aborted)throw interrupted();
+        if(!values.some(Number.isFinite))throw Error('No data for this model, area, level and time');
+        return {values,grid,validTime:new Date(validTime).toISOString(),runTime:params.refTime};
+      } finally {
+        parent.signal.removeEventListener('abort',stop);active.delete(abort);
+        abort.abort();interpolator?.destroy();
+        for(const pending of tokens.values())void pending.then(token=>{if(token)tiles.free(token);},()=>{});
+      }
+    },
+    destroy(){dead=true;for(const abort of active)abort.abort();active.clear();}
+  };
+}
+
+const createWindyContourProvider = () => createTileContourProvider({
+  products, createParams:createFullRenderingParams, getDataZoom, Interpolator:TileLayerInterpolator,
+  tiles:tileLayerSource, applyUrlTemplate
+});
+
 // Discrete contour colors sampled from the supplied temperature and height legends.
 const CONTOUR_PALETTES = {
   "temp": [
@@ -1116,27 +1220,6 @@ function contourColor(field, value) {
   return selected;
 }
 
-const MAX_RUN_AGE_MS = 36 * 60 * 60 * 1000;
-
-async function decodeFrameResponse(response) {
-  if (typeof DecompressionStream === 'undefined') throw Error('This browser does not support compressed forecast files');
-  const compressed = new Uint8Array(await response.arrayBuffer());
-  if (compressed.byteLength > 2 * 1024 * 1024) throw Error('Compressed forecast exceeds size limit');
-  const reader = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-  const parts = []; let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      size += value.byteLength;
-      if (size > 8 * 1024 * 1024) throw Error('Decoded forecast exceeds size limit');
-      parts.push(value);
-    }
-  } finally { await reader.cancel(); }
-  const joined = new Uint8Array(size); let offset = 0;
-  for (const part of parts) { joined.set(part, offset); offset += part.byteLength; }
-  return JSON.parse(new TextDecoder().decode(joined));
-}
-
 function worldCopies(west, east) {
   if (![west, east].every(Number.isFinite) || east < west) return [];
   const middle = Math.floor(((west + east) / 2 + 180) / 360);
@@ -1145,7 +1228,6 @@ function worldCopies(west, east) {
   return Array.from({ length: Math.max(0, hi - lo + 1) }, (_, i) => (lo + i) * 360);
 }
 
-const CONTOUR_BASE = 'https://raw.githubusercontent.com/ramzik99/jordan-dust-fog/synoptic-data/contours/';
 const PRESSURE_LEVELS = [925, 850, 700, 500, 300];
 const CONTOUR_FIELDS = {
   gh: { label: 'Geopotential height', units: 'dam', steps: [3, 6, 12], bounds: [-100, 6000] },
@@ -1166,41 +1248,6 @@ function safeContourOptions(raw) {
   }
   return result;
 }
-const validDate = value => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value) && Number.isFinite(Date.parse(value));
-function validateContourManifest(m, now = Date.now()) {
-  if (m?.schemaVersion !== 1 || m.source !== 'NOAA GFS' || m.collection !== 'gfs_1p00') throw Error('Unsupported contour data');
-  if (!validDate(m.runTime) || !validDate(m.retrievedAt) || Date.parse(m.runTime) > now + 3600000 || now - Date.parse(m.runTime) > MAX_RUN_AGE_MS || Date.parse(m.retrievedAt) < Date.parse(m.runTime) || Date.parse(m.retrievedAt) > now + 3600000) throw Error('Contour run is stale or invalid');
-  const g = m.grid;
-  if (!g || g.width !== 288 || g.height !== 145 || g.longitudeStart !== -180 || g.latitudeStart !== -90 || g.step !== 1.25 || JSON.stringify(m.levels) !== JSON.stringify(PRESSURE_LEVELS)) throw Error('Unexpected contour grid or pressure levels');
-  if (Object.keys(CONTOUR_FIELDS).some(k => m.units?.[k] !== CONTOUR_FIELDS[k].units)) throw Error('Unexpected contour units');
-  if (!Array.isArray(m.frames) || m.frames.length < 2 || m.frames.length > 129) throw Error('Invalid contour snapshots');
-  let previous = -Infinity;
-  for (const f of m.frames) {
-    const t = Date.parse(f.validTime);
-    if (!validDate(f.validTime) || t < Date.parse(m.runTime) || t > Date.parse(m.runTime) + 384 * 3600000 || t <= previous || previous !== -Infinity && t - previous !== 10800000) throw Error('Invalid contour snapshot time');
-    previous = t;
-  }
-  if (previous + 5400000 < now) throw Error('Contour forecast expired');
-  return m;
-}
-function contourSnapshot(manifest, timestamp) {
-  if (!manifest || !Number.isFinite(timestamp)) return null;
-  const frame = manifest.frames.reduce((best, f) => Math.abs(Date.parse(f.validTime) - timestamp) < Math.abs(Date.parse(best.validTime) - timestamp) ? f : best);
-  return Math.abs(Date.parse(frame.validTime) - timestamp) <= 5400000 ? frame : null;
-}
-function contourPath(manifest, frame, field, level) {
-  if (!CONTOUR_FIELDS[field] || !PRESSURE_LEVELS.includes(level)) throw Error('Unknown contour field or level');
-  if (!manifest.frames.includes(frame)) throw Error('Unknown contour snapshot');
-  const token = manifest.runTime.slice(0, 10).replaceAll('-', '') + '_' + manifest.runTime.slice(11, 13);
-  const stamp = frame.validTime.replaceAll('-', '').replaceAll(':', '');
-  return `runs/${token}/${stamp}/${field}-${level}.json.gz`;
-}
-function validateContourField(data, manifest, frame, field, level) {
-  if (data?.schemaVersion !== 1 || data.runTime !== manifest.runTime || data.validTime !== frame.validTime || data.field !== field || data.level !== level || data.units !== CONTOUR_FIELDS[field]?.units) throw Error('Contour field does not match its snapshot');
-  const [lo, hi] = CONTOUR_FIELDS[field].bounds;
-  if (!Array.isArray(data.values) || data.values.length !== manifest.grid.width * manifest.grid.height || data.values.some(v => v !== null && (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi))) throw Error('Invalid contour values');
-  return Float32Array.from(data.values, v => v === null ? NaN : v);
-}
 // Marching squares with a bilinear saddle decider. Missing corners leave gaps.
 // A periodic final column closes the seam at +180 without long crossing lines.
 function contourSegments(values, grid, step) {
@@ -1215,14 +1262,14 @@ function contourSegments(values, grid, step) {
     8: [[2,3]], 9: [[0,2]], 11: [[1,2]], 12: [[1,3]], 13: [[0,1]], 14: [[3,0]] };
   for (let n = 0; n < count; n++) {
     const level = first + n * step;
-    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < (grid.periodic === false ? w - 1 : w); x++) {
       const next = (x + 1) % w;
       const v = [values[y*w+x], values[y*w+next], values[(y+1)*w+next], values[(y+1)*w+x]];
       if (v.some(a => !Number.isFinite(a))) continue;
       const mask = v.reduce((m, a, i) => m | (a >= level ? 1 << i : 0), 0);
       if (!mask || mask === 15) continue;
       const pairs = mask === 5 || mask === 10 ? ((v[0]-level)*(v[2]-level)-(v[1]-level)*(v[3]-level) >= 0 ? [[0,1],[2,3]] : [[3,0],[1,2]]) : table[mask];
-      const positions = [[x0+x*d,y0+y*d],[x0+(x+1)*d,y0+y*d],[x0+(x+1)*d,y0+(y+1)*d],[x0+x*d,y0+(y+1)*d]];
+      const positions = [[x0+x*d,y0+y*(grid.latitudeStep ?? d)],[x0+(x+1)*d,y0+y*(grid.latitudeStep ?? d)],[x0+(x+1)*d,y0+(y+1)*(grid.latitudeStep ?? d)],[x0+x*d,y0+(y+1)*(grid.latitudeStep ?? d)]];
       const cross = edge => { const a = edge, b = (edge + 1) % 4, f = (level - v[a]) / (v[b] - v[a]); return [positions[a][0] + f * (positions[b][0]-positions[a][0]), positions[a][1] + f * (positions[b][1]-positions[a][1])]; };
       for (const [a,b] of pairs) { const p = cross(a), q = cross(b); if (p.every(Number.isFinite) && q.every(Number.isFinite) && Math.hypot(p[0]-q[0],p[1]-q[1]) > 1e-9) segments.push([p[0],p[1],q[0],q[1],level]); }
     }
@@ -1278,59 +1325,44 @@ function drawContours(ctx, map, layers, options, width, height) {
   ctx.setLineDash([]);
 }
 class ContourOverlay {
-  constructor({ map, onChange = () => {}, onRender = () => {}, fetcher = (...args) => globalThis.fetch(...args), base = CONTOUR_BASE }) {
-    this.map=map; this.onChange=onChange; this.onRender=onRender; this.fetcher=fetcher; this.base=base;
-    this.manifest=null; this.manifestAt=0; this.cache=new Map(); this.geometry=new Map(); this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
+  constructor({ map, provider, onChange = () => {}, onRender = () => {} }) {
+    this.map=map; this.provider=provider; this.onChange=onChange; this.onRender=onRender;
+    this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
     this.canvas=document.createElement('canvas'); this.canvas.dataset.synopticContours='map'; this.canvas.setAttribute('aria-hidden','true');
-    // Keep contours in the renderer's map layer, beneath Windy's UI siblings.
     Object.assign(this.canvas.style,{position:'absolute',left:'0',top:'0',pointerEvents:'none',zIndex:'0'});
     const surface=map.getContainer().querySelector('.maplibregl-canvas-container') || map.getContainer();
     surface.appendChild(this.canvas);
   }
-  set(options, timestamp, enabled) {
-    const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled]);
+  set(options, timestamp, enabled, product) {
+    const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled,product]);
     if(this.dead || signature===this.signature) return;
-    this.signature=signature; this.options=safe; this.timestamp=timestamp; this.enabled=enabled;
+    this.signature=signature; this.options=safe; this.timestamp=timestamp; this.enabled=enabled; this.product=product;
     this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.layers=[]; this.onRender();
     const fields=Object.keys(CONTOUR_FIELDS).filter(k=>safe[k].on);
     if(!enabled || !fields.length) { this.onChange({loading:false,errors:[],active:[]}); return; }
     this.onChange({loading:true,errors:[],active:[]});
-    this.timer=setTimeout(()=>void this.load(fields,this.epoch),120);
+    this.timer=setTimeout(()=>void this.load(fields,this.epoch),180);
   }
   async load(fields, epoch) {
-    const abort=new AbortController(); this.abort=abort; const timeout=setTimeout(()=>abort.abort(),45000), errors=[];
+    const abort=new AbortController(); this.abort=abort;
+    const timeout=setTimeout(()=>abort.abort(),30000), errors=[];
     try {
-      if(!this.manifest || Date.now()-this.manifestAt>300000) {
-        const response=await this.fetcher(this.base+'latest.json?t='+Math.floor(Date.now()/300000),{signal:abort.signal});
-        if(!response.ok) throw Error('Contour index unavailable (HTTP '+response.status+')');
-        const text=await response.text(); if(text.length>50000) throw Error('Contour index exceeds size limit');
-        const m=validateContourManifest(JSON.parse(text));
-        if(this.manifest && m.runTime<this.manifest.runTime) throw Error('Server returned an older contour run');
-        if(this.dead || epoch!==this.epoch) return; this.manifest=m; this.manifestAt=Date.now();
-      }
-      const m=validateContourManifest(this.manifest), frame=contourSnapshot(m,this.timestamp);
-      if(!frame) throw Error('No contour snapshot within 90 minutes of the Windy forecast time');
       await Promise.all(fields.map(async field=>{
-        const config=this.options[field], key=m.runTime+':'+frame.validTime+':'+field+':'+config.level;
+        const config=this.options[field];
         try {
-          let values=this.cache.get(key);
-          if(!values) {
-            const response=await this.fetcher(this.base+contourPath(m,frame,field,config.level),{signal:abort.signal});
-            if(!response.ok) throw Error('HTTP '+response.status);
-            values=validateContourField(await decodeFrameResponse(response),m,frame,field,config.level);
-          }
+          const result=await this.provider.load({map:this.map,product:this.product,timestamp:this.timestamp,field,level:config.level,abort});
           if(this.dead || epoch!==this.epoch || abort.signal.aborted) return;
-          this.cache.delete(key); this.cache.set(key,values); while(this.cache.size>9) this.cache.delete(this.cache.keys().next().value);
-          const geometryKey=key+':'+config.step;
-          let segments=this.geometry.get(geometryKey);
-          if(!segments) { segments=contourSegments(values,m.grid,config.step); this.geometry.set(geometryKey,segments); while(this.geometry.size>3) this.geometry.delete(this.geometry.keys().next().value); }
-          if(this.dead || epoch!==this.epoch) return;
-          this.layers.push({field,level:config.level,segments}); this.layers.sort((a,b)=>Object.keys(CONTOUR_FIELDS).indexOf(a.field)-Object.keys(CONTOUR_FIELDS).indexOf(b.field)); this.onRender();
-        } catch(error) { if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(error?.name==='AbortError'?'request timed out':error.message)); }
+          const segments=contourSegments(result.values,result.grid,config.step);
+          this.validTime=result.validTime;
+          this.layers.push({field,level:config.level,segments});
+          this.layers.sort((a,b)=>Object.keys(CONTOUR_FIELDS).indexOf(a.field)-Object.keys(CONTOUR_FIELDS).indexOf(b.field));
+          this.onRender();
+        } catch(error) {
+          if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(abort.signal.aborted?'request timed out':error.message));
+        }
       }));
-      if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:frame.validTime,runTime:m.runTime});
-    } catch(error) { if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors:[error?.name==='AbortError'?'Contour request timed out':error.message],active:[]}); }
-    finally { clearTimeout(timeout); }
+      if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:this.validTime,product:this.product});
+    } finally { clearTimeout(timeout); }
   }
   paint() {
     if(this.dead) return;
@@ -1338,13 +1370,13 @@ class ContourOverlay {
     if(c.width!==Math.round(size.x*ratio) || c.height!==Math.round(size.y*ratio)) { c.width=Math.round(size.x*ratio); c.height=Math.round(size.y*ratio); }
     c.style.width=size.x+'px'; c.style.height=size.y+'px'; const ctx=c.getContext('2d'); if(!ctx) return;
     ctx.setTransform(ratio,0,0,ratio,0,0);
-    const fresh=this.manifest && Date.now()-Date.parse(this.manifest.runTime)<=MAX_RUN_AGE_MS;
-    const shown=this.enabled && fresh?this.layers:[];
+    const shown=this.enabled?this.layers:[];
     c.dataset.layers=shown.map(l=>l.field+':'+l.level).sort().join(',');
+    c.dataset.product=this.product || '';
     drawContours(ctx,this.map,shown,this.options,size.x,size.y);
   }
-  refresh() { this.manifestAt=0; this.signature=''; this.set(this.options,this.timestamp,this.enabled); }
-  destroy() { this.dead=true; this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.cache.clear(); this.geometry.clear(); this.layers=[]; this.canvas.remove(); }
+  refresh() { this.signature=''; this.set(this.options,this.timestamp,this.enabled,this.product); }
+  destroy() { this.dead=true; this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.layers=[]; this.provider?.destroy(); this.canvas.remove(); }
 }
 
 // Use Windy's native below-timeline slot on phones; preserve the desktop portal.
@@ -1402,39 +1434,39 @@ function add_css(target) {
 
 function get_each_context(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[30] = list[i];
-	child_ctx[31] = list;
-	child_ctx[32] = i;
+	child_ctx[33] = list[i];
+	child_ctx[34] = list;
+	child_ctx[35] = i;
 	return child_ctx;
 }
 
 function get_each_context_1(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[33] = list[i];
+	child_ctx[36] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_2(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[36] = list[i];
+	child_ctx[39] = list[i];
 	return child_ctx;
 }
 
 function get_each_context_3(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[30] = list[i];
-	child_ctx[39] = list;
-	child_ctx[40] = i;
+	child_ctx[33] = list[i];
+	child_ctx[42] = list;
+	child_ctx[43] = i;
 	return child_ctx;
 }
 
 function get_each_context_4(ctx, list, i) {
 	const child_ctx = ctx.slice();
-	child_ctx[41] = list[i];
+	child_ctx[44] = list[i];
 	return child_ctx;
 }
 
-// (75:0) {:else}
+// (85:0) {:else}
 function create_else_block(ctx) {
 	let section;
 	let header;
@@ -1444,30 +1476,35 @@ function create_else_block(ctx) {
 	let button1;
 	let t3;
 	let t4;
+	let p;
 	let t5;
+	let t6_value = (/*product*/ ctx[3].toUpperCase() || 'Unavailable') + "";
 	let t6;
 	let t7;
+	let t8;
+	let t9;
+	let t10;
 	let details;
 	let summary;
-	let t9;
+	let t12;
 	let div1;
 	let button2;
-	let t10;
+	let t13;
 	let button2_disabled_value;
 	let button3;
-	let t12;
+	let t15;
 	let div2;
 	let label0;
 	let input0;
-	let t13;
+	let t16;
 	let label1;
 	let input1;
-	let t14;
-	let button4;
-	let t15;
-	let button4_disabled_value;
-	let t16;
 	let t17;
+	let button4;
+	let t18;
+	let button4_disabled_value;
+	let t19;
+	let t20;
 	let small;
 	let mounted;
 	let dispose;
@@ -1478,15 +1515,15 @@ function create_else_block(ctx) {
 		each_blocks_2[i] = create_each_block_3(get_each_context_3(ctx, each_value_3, i));
 	}
 
-	let if_block0 = /*status*/ ctx[5].loading && create_if_block_2();
-	let each_value_2 = ensure_array_like(/*status*/ ctx[5].errors);
+	let if_block0 = /*status*/ ctx[6].loading && create_if_block_2();
+	let each_value_2 = ensure_array_like(/*status*/ ctx[6].errors);
 	let each_blocks_1 = [];
 
 	for (let i = 0; i < each_value_2.length; i += 1) {
 		each_blocks_1[i] = create_each_block_2(get_each_context_2(ctx, each_value_2, i));
 	}
 
-	let if_block1 = /*status*/ ctx[5].validTime && /*status*/ ctx[5].active.length && create_if_block_1(ctx);
+	let if_block1 = /*status*/ ctx[6].validTime && /*status*/ ctx[6].active.length && create_if_block_1(ctx);
 	let each_value = ensure_array_like(Object.keys(CONTOUR_FIELDS));
 	let each_blocks = [];
 
@@ -1512,44 +1549,48 @@ function create_else_block(ctx) {
 			}
 
 			t4 = space();
+			p = element("p");
+			t5 = text("Model: ");
+			t6 = text(t6_value);
+			t7 = space();
 			if (if_block0) if_block0.c();
-			t5 = space();
+			t8 = space();
 
 			for (let i = 0; i < each_blocks_1.length; i += 1) {
 				each_blocks_1[i].c();
 			}
 
-			t6 = space();
+			t9 = space();
 			if (if_block1) if_block1.c();
-			t7 = space();
+			t10 = space();
 			details = element("details");
 			summary = element("summary");
 			summary.textContent = "More";
-			t9 = space();
+			t12 = space();
 			div1 = element("div");
 			button2 = element("button");
-			t10 = text("Synoptic preset");
+			t13 = text("Synoptic preset");
 			button3 = element("button");
 			button3.textContent = "Clear all";
-			t12 = space();
+			t15 = space();
 			div2 = element("div");
 			label0 = element("label");
 			input0 = element("input");
-			t13 = text("On");
+			t16 = text("On");
 			label1 = element("label");
 			input1 = element("input");
-			t14 = text("Labels");
+			t17 = text("Labels");
 			button4 = element("button");
-			t15 = text("Refresh");
-			t16 = space();
+			t18 = text("Refresh");
+			t19 = space();
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				each_blocks[i].c();
 			}
 
-			t17 = space();
+			t20 = space();
 			small = element("small");
-			small.textContent = "Times use your device timezone. Height in dam; temperature in °C.";
+			small.textContent = "Follows Windy’s selected model and available forecast range. Times use your device timezone. Height in dam; temperature in °C.";
 			attr(strong, "class", "svelte-8zof97");
 			attr(button0, "aria-label", "Minimize panel");
 			attr(button0, "class", "svelte-8zof97");
@@ -1558,6 +1599,8 @@ function create_else_block(ctx) {
 			attr(button1, "class", "svelte-8zof97");
 			attr(div0, "class", "panel-actions svelte-8zof97");
 			attr(header, "class", "svelte-8zof97");
+			attr(p, "class", "stamp svelte-8zof97");
+			attr(p, "data-testid", "contour-model");
 			attr(summary, "class", "svelte-8zof97");
 			button2.disabled = button2_disabled_value = !/*enabled*/ ctx[2];
 			attr(button2, "class", "svelte-8zof97");
@@ -1571,7 +1614,7 @@ function create_else_block(ctx) {
 			attr(input1, "type", "checkbox");
 			attr(input1, "class", "svelte-8zof97");
 			attr(label1, "class", "svelte-8zof97");
-			button4.disabled = button4_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[5].loading;
+			button4.disabled = button4_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[6].loading;
 			attr(button4, "class", "svelte-8zof97");
 			attr(div2, "class", "switches svelte-8zof97");
 			attr(small, "class", "svelte-8zof97");
@@ -1595,8 +1638,12 @@ function create_else_block(ctx) {
 			}
 
 			append(section, t4);
+			append(section, p);
+			append(p, t5);
+			append(p, t6);
+			append(section, t7);
 			if (if_block0) if_block0.m(section, null);
-			append(section, t5);
+			append(section, t8);
 
 			for (let i = 0; i < each_blocks_1.length; i += 1) {
 				if (each_blocks_1[i]) {
@@ -1604,29 +1651,29 @@ function create_else_block(ctx) {
 				}
 			}
 
-			append(section, t6);
+			append(section, t9);
 			if (if_block1) if_block1.m(section, null);
-			append(section, t7);
+			append(section, t10);
 			append(section, details);
 			append(details, summary);
-			append(details, t9);
+			append(details, t12);
 			append(details, div1);
 			append(div1, button2);
-			append(button2, t10);
+			append(button2, t13);
 			append(div1, button3);
-			append(details, t12);
+			append(details, t15);
 			append(details, div2);
 			append(div2, label0);
 			append(label0, input0);
 			input0.checked = /*enabled*/ ctx[2];
-			append(label0, t13);
+			append(label0, t16);
 			append(div2, label1);
 			append(label1, input1);
 			input1.checked = /*options*/ ctx[0].labels;
-			append(label1, t14);
+			append(label1, t17);
 			append(div2, button4);
-			append(button4, t15);
-			append(details, t16);
+			append(button4, t18);
+			append(details, t19);
 
 			for (let i = 0; i < each_blocks.length; i += 1) {
 				if (each_blocks[i]) {
@@ -1634,26 +1681,26 @@ function create_else_block(ctx) {
 				}
 			}
 
-			append(details, t17);
+			append(details, t20);
 			append(details, small);
 
 			if (!mounted) {
 				dispose = [
-					listen(button0, "click", /*click_handler_1*/ ctx[14]),
-					listen(button1, "click", /*closePlugin*/ ctx[8]),
-					listen(button2, "click", /*preset*/ ctx[9]),
-					listen(button3, "click", /*clear*/ ctx[10]),
-					listen(input0, "change", /*input0_change_handler*/ ctx[17]),
-					listen(input1, "change", /*input1_change_handler*/ ctx[18]),
-					listen(input1, "change", /*save*/ ctx[7]),
-					listen(button4, "click", /*click_handler_2*/ ctx[19])
+					listen(button0, "click", /*click_handler_1*/ ctx[15]),
+					listen(button1, "click", /*closePlugin*/ ctx[9]),
+					listen(button2, "click", /*preset*/ ctx[10]),
+					listen(button3, "click", /*clear*/ ctx[11]),
+					listen(input0, "change", /*input0_change_handler*/ ctx[18]),
+					listen(input1, "change", /*input1_change_handler*/ ctx[19]),
+					listen(input1, "change", /*save*/ ctx[8]),
+					listen(button4, "click", /*click_handler_2*/ ctx[20])
 				];
 
 				mounted = true;
 			}
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*enabled, options, save*/ 133) {
+			if (dirty[0] & /*enabled, options, save*/ 261) {
 				each_value_3 = ensure_array_like(Object.keys(CONTOUR_FIELDS));
 				let i;
 
@@ -1676,19 +1723,21 @@ function create_else_block(ctx) {
 				each_blocks_2.length = each_value_3.length;
 			}
 
-			if (/*status*/ ctx[5].loading) {
+			if (dirty[0] & /*product*/ 8 && t6_value !== (t6_value = (/*product*/ ctx[3].toUpperCase() || 'Unavailable') + "")) set_data(t6, t6_value);
+
+			if (/*status*/ ctx[6].loading) {
 				if (if_block0) ; else {
 					if_block0 = create_if_block_2();
 					if_block0.c();
-					if_block0.m(section, t5);
+					if_block0.m(section, t8);
 				}
 			} else if (if_block0) {
 				if_block0.d(1);
 				if_block0 = null;
 			}
 
-			if (dirty[0] & /*status*/ 32) {
-				each_value_2 = ensure_array_like(/*status*/ ctx[5].errors);
+			if (dirty[0] & /*status*/ 64) {
+				each_value_2 = ensure_array_like(/*status*/ ctx[6].errors);
 				let i;
 
 				for (i = 0; i < each_value_2.length; i += 1) {
@@ -1699,7 +1748,7 @@ function create_else_block(ctx) {
 					} else {
 						each_blocks_1[i] = create_each_block_2(child_ctx);
 						each_blocks_1[i].c();
-						each_blocks_1[i].m(section, t6);
+						each_blocks_1[i].m(section, t9);
 					}
 				}
 
@@ -1710,13 +1759,13 @@ function create_else_block(ctx) {
 				each_blocks_1.length = each_value_2.length;
 			}
 
-			if (/*status*/ ctx[5].validTime && /*status*/ ctx[5].active.length) {
+			if (/*status*/ ctx[6].validTime && /*status*/ ctx[6].active.length) {
 				if (if_block1) {
 					if_block1.p(ctx, dirty);
 				} else {
 					if_block1 = create_if_block_1(ctx);
 					if_block1.c();
-					if_block1.m(section, t7);
+					if_block1.m(section, t10);
 				}
 			} else if (if_block1) {
 				if_block1.d(1);
@@ -1735,11 +1784,11 @@ function create_else_block(ctx) {
 				input1.checked = /*options*/ ctx[0].labels;
 			}
 
-			if (dirty[0] & /*enabled, status*/ 36 && button4_disabled_value !== (button4_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[5].loading)) {
+			if (dirty[0] & /*enabled, status*/ 68 && button4_disabled_value !== (button4_disabled_value = !/*enabled*/ ctx[2] || /*status*/ ctx[6].loading)) {
 				button4.disabled = button4_disabled_value;
 			}
 
-			if (dirty[0] & /*enabled, options, save*/ 133) {
+			if (dirty[0] & /*enabled, options, save*/ 261) {
 				each_value = ensure_array_like(Object.keys(CONTOUR_FIELDS));
 				let i;
 
@@ -1751,7 +1800,7 @@ function create_else_block(ctx) {
 					} else {
 						each_blocks[i] = create_each_block(child_ctx);
 						each_blocks[i].c();
-						each_blocks[i].m(details, t17);
+						each_blocks[i].m(details, t20);
 					}
 				}
 
@@ -1778,7 +1827,7 @@ function create_else_block(ctx) {
 	};
 }
 
-// (73:0) {#if hidden}
+// (83:0) {#if hidden}
 function create_if_block(ctx) {
 	let button;
 	let mounted;
@@ -1794,7 +1843,7 @@ function create_if_block(ctx) {
 			insert(target, button, anchor);
 
 			if (!mounted) {
-				dispose = listen(button, "click", /*click_handler*/ ctx[13]);
+				dispose = listen(button, "click", /*click_handler*/ ctx[14]);
 				mounted = true;
 			}
 		},
@@ -1810,15 +1859,15 @@ function create_if_block(ctx) {
 	};
 }
 
-// (81:144) {#each PRESSURE_LEVELS as level}
+// (91:144) {#each PRESSURE_LEVELS as level}
 function create_each_block_4(ctx) {
 	let option;
 
 	return {
 		c() {
 			option = element("option");
-			option.textContent = `${/*level*/ ctx[41]} hPa`;
-			option.__value = /*level*/ ctx[41];
+			option.textContent = `${/*level*/ ctx[44]} hPa`;
+			option.__value = /*level*/ ctx[44];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -1833,7 +1882,7 @@ function create_each_block_4(ctx) {
 	};
 }
 
-// (78:4) {#each Object.keys(CONTOUR_FIELDS) as key}
+// (88:4) {#each Object.keys(CONTOUR_FIELDS) as key}
 function create_each_block_3(ctx) {
 	let div;
 	let label;
@@ -1847,7 +1896,7 @@ function create_each_block_3(ctx) {
 	let dispose;
 
 	function input_change_handler() {
-		/*input_change_handler*/ ctx[15].call(input, /*key*/ ctx[30]);
+		/*input_change_handler*/ ctx[16].call(input, /*key*/ ctx[33]);
 	}
 
 	let each_value_4 = ensure_array_like(PRESSURE_LEVELS);
@@ -1858,7 +1907,7 @@ function create_each_block_3(ctx) {
 	}
 
 	function select_change_handler() {
-		/*select_change_handler*/ ctx[16].call(select, /*key*/ ctx[30]);
+		/*select_change_handler*/ ctx[17].call(select, /*key*/ ctx[33]);
 	}
 
 	return {
@@ -1868,7 +1917,7 @@ function create_each_block_3(ctx) {
 			input = element("input");
 			span = element("span");
 
-			span.textContent = `${/*key*/ ctx[30] === 'gh'
+			span.textContent = `${/*key*/ ctx[33] === 'gh'
 			? 'Geopotential'
 			: 'Temperature'}`;
 
@@ -1879,22 +1928,22 @@ function create_each_block_3(ctx) {
 				each_blocks[i].c();
 			}
 
-			attr(input, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' isolines');
+			attr(input, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[33]].label + ' isolines');
 			attr(input, "type", "checkbox");
 			input.disabled = input_disabled_value = !/*enabled*/ ctx[2];
 			attr(input, "class", "svelte-8zof97");
 			attr(label, "class", "svelte-8zof97");
-			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' pressure level');
+			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[33]].label + ' pressure level');
 			select.disabled = select_disabled_value = !/*enabled*/ ctx[2];
 			attr(select, "class", "svelte-8zof97");
-			if (/*options*/ ctx[0][/*key*/ ctx[30]].level === void 0) add_render_callback(select_change_handler);
+			if (/*options*/ ctx[0][/*key*/ ctx[33]].level === void 0) add_render_callback(select_change_handler);
 			attr(div, "class", "row svelte-8zof97");
 		},
 		m(target, anchor) {
 			insert(target, div, anchor);
 			append(div, label);
 			append(label, input);
-			input.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
+			input.checked = /*options*/ ctx[0][/*key*/ ctx[33]].on;
 			append(label, span);
 			append(div, t1);
 			append(div, select);
@@ -1905,14 +1954,14 @@ function create_each_block_3(ctx) {
 				}
 			}
 
-			select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].level, true);
+			select_option(select, /*options*/ ctx[0][/*key*/ ctx[33]].level, true);
 
 			if (!mounted) {
 				dispose = [
 					listen(input, "change", input_change_handler),
-					listen(input, "change", /*save*/ ctx[7]),
+					listen(input, "change", /*save*/ ctx[8]),
 					listen(select, "change", select_change_handler),
-					listen(select, "change", /*save*/ ctx[7])
+					listen(select, "change", /*save*/ ctx[8])
 				];
 
 				mounted = true;
@@ -1926,7 +1975,7 @@ function create_each_block_3(ctx) {
 			}
 
 			if (dirty[0] & /*options*/ 1) {
-				input.checked = /*options*/ ctx[0][/*key*/ ctx[30]].on;
+				input.checked = /*options*/ ctx[0][/*key*/ ctx[33]].on;
 			}
 
 			if (dirty[0] & /*enabled*/ 4 && select_disabled_value !== (select_disabled_value = !/*enabled*/ ctx[2])) {
@@ -1934,7 +1983,7 @@ function create_each_block_3(ctx) {
 			}
 
 			if (dirty[0] & /*options*/ 1) {
-				select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].level);
+				select_option(select, /*options*/ ctx[0][/*key*/ ctx[33]].level);
 			}
 		},
 		d(detaching) {
@@ -1949,7 +1998,7 @@ function create_each_block_3(ctx) {
 	};
 }
 
-// (84:4) {#if status.loading}
+// (95:4) {#if status.loading}
 function create_if_block_2(ctx) {
 	let p;
 
@@ -1971,10 +2020,10 @@ function create_if_block_2(ctx) {
 	};
 }
 
-// (85:4) {#each status.errors as message}
+// (96:4) {#each status.errors as message}
 function create_each_block_2(ctx) {
 	let p;
-	let t_value = /*message*/ ctx[36] + "";
+	let t_value = /*message*/ ctx[39] + "";
 	let t;
 
 	return {
@@ -1989,7 +2038,7 @@ function create_each_block_2(ctx) {
 			append(p, t);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*status*/ 32 && t_value !== (t_value = /*message*/ ctx[36] + "")) set_data(t, t_value);
+			if (dirty[0] & /*status*/ 64 && t_value !== (t_value = /*message*/ ctx[39] + "")) set_data(t, t_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -1999,11 +2048,11 @@ function create_each_block_2(ctx) {
 	};
 }
 
-// (86:4) {#if status.validTime && status.active.length}
+// (97:4) {#if status.validTime && status.active.length}
 function create_if_block_1(ctx) {
 	let p;
 	let t0;
-	let t1_value = /*displayTime*/ ctx[6](/*status*/ ctx[5].validTime) + "";
+	let t1_value = /*displayTime*/ ctx[7](/*status*/ ctx[6].validTime) + "";
 	let t1;
 
 	return {
@@ -2020,7 +2069,7 @@ function create_if_block_1(ctx) {
 			append(p, t1);
 		},
 		p(ctx, dirty) {
-			if (dirty[0] & /*status*/ 32 && t1_value !== (t1_value = /*displayTime*/ ctx[6](/*status*/ ctx[5].validTime) + "")) set_data(t1, t1_value);
+			if (dirty[0] & /*status*/ 64 && t1_value !== (t1_value = /*displayTime*/ ctx[7](/*status*/ ctx[6].validTime) + "")) set_data(t1, t1_value);
 		},
 		d(detaching) {
 			if (detaching) {
@@ -2030,13 +2079,13 @@ function create_if_block_1(ctx) {
 	};
 }
 
-// (91:226) {#each CONTOUR_FIELDS[key].steps as step}
+// (102:226) {#each CONTOUR_FIELDS[key].steps as step}
 function create_each_block_1(ctx) {
 	let option;
-	let t0_value = /*step*/ ctx[33] + "";
+	let t0_value = /*step*/ ctx[36] + "";
 	let t0;
 	let t1;
-	let t2_value = (/*key*/ ctx[30] === 'temp' ? '°C' : 'dam') + "";
+	let t2_value = (/*key*/ ctx[33] === 'temp' ? '°C' : 'dam') + "";
 	let t2;
 
 	return {
@@ -2045,7 +2094,7 @@ function create_each_block_1(ctx) {
 			t0 = text(t0_value);
 			t1 = space();
 			t2 = text(t2_value);
-			option.__value = /*step*/ ctx[33];
+			option.__value = /*step*/ ctx[36];
 			set_input_value(option, option.__value);
 		},
 		m(target, anchor) {
@@ -2063,11 +2112,11 @@ function create_each_block_1(ctx) {
 	};
 }
 
-// (90:6) {#each Object.keys(CONTOUR_FIELDS) as key}
+// (101:6) {#each Object.keys(CONTOUR_FIELDS) as key}
 function create_each_block(ctx) {
 	let label;
 
-	let t_value = (/*key*/ ctx[30] === 'gh'
+	let t_value = (/*key*/ ctx[33] === 'gh'
 	? 'Height interval'
 	: 'Temperature interval') + "";
 
@@ -2076,7 +2125,7 @@ function create_each_block(ctx) {
 	let select_disabled_value;
 	let mounted;
 	let dispose;
-	let each_value_1 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+	let each_value_1 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[33]].steps);
 	let each_blocks = [];
 
 	for (let i = 0; i < each_value_1.length; i += 1) {
@@ -2084,7 +2133,7 @@ function create_each_block(ctx) {
 	}
 
 	function select_change_handler_1() {
-		/*select_change_handler_1*/ ctx[20].call(select, /*key*/ ctx[30]);
+		/*select_change_handler_1*/ ctx[21].call(select, /*key*/ ctx[33]);
 	}
 
 	return {
@@ -2097,10 +2146,10 @@ function create_each_block(ctx) {
 				each_blocks[i].c();
 			}
 
-			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[30]].label + ' contour spacing');
+			attr(select, "aria-label", CONTOUR_FIELDS[/*key*/ ctx[33]].label + ' contour spacing');
 			select.disabled = select_disabled_value = !/*enabled*/ ctx[2];
 			attr(select, "class", "svelte-8zof97");
-			if (/*options*/ ctx[0][/*key*/ ctx[30]].step === void 0) add_render_callback(select_change_handler_1);
+			if (/*options*/ ctx[0][/*key*/ ctx[33]].step === void 0) add_render_callback(select_change_handler_1);
 			attr(label, "class", "spacing svelte-8zof97");
 		},
 		m(target, anchor) {
@@ -2114,12 +2163,12 @@ function create_each_block(ctx) {
 				}
 			}
 
-			select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].step, true);
+			select_option(select, /*options*/ ctx[0][/*key*/ ctx[33]].step, true);
 
 			if (!mounted) {
 				dispose = [
 					listen(select, "change", select_change_handler_1),
-					listen(select, "change", /*save*/ ctx[7])
+					listen(select, "change", /*save*/ ctx[8])
 				];
 
 				mounted = true;
@@ -2129,7 +2178,7 @@ function create_each_block(ctx) {
 			ctx = new_ctx;
 
 			if (dirty & /*Object*/ 0) {
-				each_value_1 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[30]].steps);
+				each_value_1 = ensure_array_like(CONTOUR_FIELDS[/*key*/ ctx[33]].steps);
 				let i;
 
 				for (i = 0; i < each_value_1.length; i += 1) {
@@ -2156,7 +2205,7 @@ function create_each_block(ctx) {
 			}
 
 			if (dirty[0] & /*options*/ 1) {
-				select_option(select, /*options*/ ctx[0][/*key*/ ctx[30]].step);
+				select_option(select, /*options*/ ctx[0][/*key*/ ctx[33]].step);
 			}
 		},
 		d(detaching) {
@@ -2175,7 +2224,7 @@ function create_fragment(ctx) {
 	let div;
 
 	function select_block_type(ctx, dirty) {
-		if (/*hidden*/ ctx[4]) return create_if_block;
+		if (/*hidden*/ ctx[5]) return create_if_block;
 		return create_else_block;
 	}
 
@@ -2191,7 +2240,7 @@ function create_fragment(ctx) {
 		m(target, anchor) {
 			insert(target, div, anchor);
 			if_block.m(div, null);
-			/*div_binding*/ ctx[21](div);
+			/*div_binding*/ ctx[22](div);
 		},
 		p(ctx, dirty) {
 			if (current_block_type === (current_block_type = select_block_type(ctx)) && if_block) {
@@ -2214,7 +2263,7 @@ function create_fragment(ctx) {
 			}
 
 			if_block.d();
-			/*div_binding*/ ctx[21](null);
+			/*div_binding*/ ctx[22](null);
 		}
 	};
 }
@@ -2232,8 +2281,11 @@ function instance($$self, $$props, $$invalidate) {
 		hidden = false,
 		destroyed = false;
 
-	let timestamp = Date.now(), status = { loading: false, errors: [], active: [] };
-	let listener, timer, clock, animation = 0, observer = null;
+	let product = '',
+		timestamp = Date.now(),
+		status = { loading: false, errors: [], active: [] };
+
+	let listener, modelListener, timer, clock, animation = 0, observer = null;
 
 	const displayTime = value => new Date(value).toLocaleString(undefined, {
 		month: 'short',
@@ -2273,6 +2325,10 @@ function instance($$self, $$props, $$invalidate) {
 		save();
 	}
 
+	function refreshViewport() {
+		layer?.refresh();
+	}
+
 	function render() {
 		if (destroyed || animation) return;
 
@@ -2283,7 +2339,7 @@ function instance($$self, $$props, $$invalidate) {
 	}
 
 	const onopen = () => {
-		$$invalidate(4, hidden = false);
+		$$invalidate(5, hidden = false);
 	};
 
 	onMount(() => {
@@ -2295,20 +2351,28 @@ function instance($$self, $$props, $$invalidate) {
 			
 		}
 
-		$$invalidate(12, timestamp = Number(store.get('timestamp')) || Date.now());
+		$$invalidate(13, timestamp = Number(store.get('timestamp')) || Date.now());
+		$$invalidate(3, product = String(store.get('product') || ''));
 
 		$$invalidate(1, layer = new ContourOverlay({
 				map,
+				provider: createWindyContourProvider(),
 				onChange: value => {
-					$$invalidate(5, status = value);
+					$$invalidate(6, status = value);
 				},
 				onRender: render
 			}));
 
 		listener = store.on('timestamp', () => {
-			$$invalidate(12, timestamp = Number(store.get('timestamp')));
+			$$invalidate(13, timestamp = Number(store.get('timestamp')));
 		});
 
+		modelListener = store.on('product', () => {
+			$$invalidate(3, product = String(store.get('product') || ''));
+		});
+
+		map.on('moveend', refreshViewport);
+		map.on('zoomend', refreshViewport);
 		map.on('move', render);
 		map.on('zoom', render);
 		map.on('resize', render);
@@ -2339,14 +2403,17 @@ function instance($$self, $$props, $$invalidate) {
 		clearInterval(timer);
 		clearInterval(clock);
 		observer?.disconnect();
+		map.off('moveend', refreshViewport);
+		map.off('zoomend', refreshViewport);
 		map.off('move', render);
 		map.off('zoom', render);
 		map.off('resize', render);
 		if (listener != null) store.off(listener);
+		if (modelListener != null) store.off(modelListener);
 	});
 
-	const click_handler = () => $$invalidate(4, hidden = false);
-	const click_handler_1 = () => $$invalidate(4, hidden = true);
+	const click_handler = () => $$invalidate(5, hidden = false);
+	const click_handler_1 = () => $$invalidate(5, hidden = true);
 
 	function input_change_handler(key) {
 		options[key].on = this.checked;
@@ -2378,13 +2445,13 @@ function instance($$self, $$props, $$invalidate) {
 	function div_binding($$value) {
 		binding_callbacks[$$value ? 'unshift' : 'push'](() => {
 			controls = $$value;
-			$$invalidate(3, controls);
+			$$invalidate(4, controls);
 		});
 	}
 
 	$$self.$$.update = () => {
-		if ($$self.$$.dirty[0] & /*layer, options, timestamp, enabled*/ 4103) {
-			if (layer) layer.set(options, timestamp, enabled);
+		if ($$self.$$.dirty[0] & /*layer, options, timestamp, enabled, product*/ 8207) {
+			if (layer) layer.set(options, timestamp, enabled, product);
 		}
 	};
 
@@ -2392,6 +2459,7 @@ function instance($$self, $$props, $$invalidate) {
 		options,
 		layer,
 		enabled,
+		product,
 		controls,
 		hidden,
 		status,
@@ -2417,11 +2485,11 @@ function instance($$self, $$props, $$invalidate) {
 class PluginEntry extends SvelteComponent {
 	constructor(options) {
 		super();
-		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 11 }, add_css, [-1, -1]);
+		init(this, options, instance, create_fragment, safe_not_equal, { onopen: 12 }, add_css, [-1, -1]);
 	}
 
 	get onopen() {
-		return this.$$.ctx[11];
+		return this.$$.ctx[12];
 	}
 }
 
