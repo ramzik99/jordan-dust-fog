@@ -77,7 +77,7 @@
   .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0}.row label{font-size:12px}label{display:flex;align-items:center;gap:7px}.row select{font-size:11px;min-width:88px}.stamp{font-size:11px;color:#bdccd9;margin:8px 0}.error{background:#692f30;padding:8px;border-radius:6px;font-size:11px}p[role=status]{font-size:11px}.more{border-top:1px solid #42586b;margin-top:8px;padding-top:8px}summary{font-size:11px}.toolbar,.switches{display:flex;gap:8px;align-items:center;margin:10px 0}.switches button{margin-left:auto}button{font-size:11px}.spacing{justify-content:space-between;margin:10px 0;font-size:11px}small{display:block;font-size:10px;color:#bbcad6;margin-top:10px}
   @media(max-width:600px){
     .atlas-controls{left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));width:calc(100vw - 16px);max-width:none}
-    .atlas-controls.mobile-docked{position:relative;left:auto;bottom:auto;width:auto;margin:4px 8px calc(8px + env(safe-area-inset-bottom,0px));max-width:none}
+    .atlas-controls:global(.mobile-docked){position:relative;left:auto;bottom:auto;width:auto;margin:4px 8px calc(8px + env(safe-area-inset-bottom,0px));max-width:none}
     .panel{padding:8px 10px;max-height:50dvh;border-radius:9px}
     header{margin-bottom:2px}header strong{font-size:14px}
     .row{padding:4px 0}.row select{min-height:32px}
