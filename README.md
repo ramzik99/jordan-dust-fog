@@ -10,8 +10,10 @@ Model calendars and tile paths are resolved on each load. New data is checked ev
 
 Development preview: https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@synoptic-preview/synoptic-atlas.js
 
-Published installation URL (v1.2.3): https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.3/plugin.min.js
+Published installation URL (v1.3.0): https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.3.0/plugin.min.js
 
 Build with `npm install` and `npm run build`. Run `npm test` for contour/provider unit tests. Browser regressions compile the real plugin against a simulated Windy host and exercise desktop/mobile controls, model changes, cancellations, unsupported fields and forecast range limits. The legacy GFS ingestion scripts remain available manually; their automatic schedule is disabled, and the plugin no longer requests their data.
 
 Package ID: `windy-plugin-synoptic-atlas`. Windy hosting publication and gallery review are separate.
+
+Version 1.3.0 passed 17 unit tests, 42 desktop/mobile browser scenarios and live Windy integration. The live checks verified native ECMWF/GFS/ICON scalar fields, long-range ECMWF/GFS endpoints, and painted contours after switching the compiled plugin between ECMWF and GFS. Tested source: `2907c8d7b0713ca10978a4b0862c94d99dedd0f8`. Windy hosting upload succeeded via the isolated `publish-synoptic-atlas-1.3.0` branch of `ramzik99/wintry-forecast`; its main branch was not changed.
