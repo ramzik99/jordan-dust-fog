@@ -6,9 +6,24 @@ export function mountControllerDock(controls) {
   for (const type of inputEvents) controls.addEventListener(type, stopInput, { passive: true });
   controls.style.setProperty('pointer-events', 'auto', 'important');
   const mobile = window.matchMedia('(max-width:600px)');
+  // Capture only this plugin's original host before portalling the controls.
+  const originalParent = controls.parentElement;
+  const nativeHost = originalParent?.closest('[id="windy-plugin-synoptic-atlas"],[id="plugin-windy-plugin-synoptic-atlas"],[data-plugin="windy-plugin-synoptic-atlas"]') || originalParent;
+  const safeHost = nativeHost && nativeHost !== document.body && nativeHost !== document.documentElement && nativeHost.id !== 'bottom-wrapper' && nativeHost.id !== 'leaflet-map' ? nativeHost : null;
+  const originalDisplay = safeHost?.style.getPropertyValue('display') || '';
+  const originalPriority = safeHost?.style.getPropertyPriority('display') || '';
+  function restoreHost() {
+    if (!safeHost) return;
+    if (originalDisplay) safeHost.style.setProperty('display', originalDisplay, originalPriority);
+    else safeHost.style.removeProperty('display');
+  }
   let frame = 0, dead = false;
   function place() {
     frame = 0; if (dead) return;
+    if (safeHost) {
+      if (!mobile.matches) safeHost.style.setProperty('display', 'none', 'important');
+      else restoreHost();
+    }
     const host = mobile.matches ? document.querySelector('#bottom-wrapper') : null;
     const slot = host?.querySelector('[data-plugin="bottom-below-controls-mobile"]');
     const parent = host || document.body;
@@ -23,6 +38,7 @@ export function mountControllerDock(controls) {
   observer.observe(document.body, { childList: true, subtree: true });
   mobile.addEventListener('change', schedule);
   return () => {
+    restoreHost();
     for (const type of inputEvents) controls.removeEventListener(type, stopInput);
     dead = true; observer.disconnect(); mobile.removeEventListener('change', schedule);
     if (frame) cancelAnimationFrame(frame);

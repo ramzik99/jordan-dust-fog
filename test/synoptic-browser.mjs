@@ -3,12 +3,13 @@ import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const manifest=JSON.parse(await readFile('test-fixture/contours/latest.json','utf8'));
-const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column;pointer-events:none}#timeline{pointer-events:auto;height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"><div class="maplibregl-canvas-container"><canvas data-weather-map></canvas></div><button id="windy-menu" style="position:absolute;top:20px;left:20px;z-index:10;background:#182c40;color:white;padding:16px">Windy menu</button></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column;pointer-events:none}#timeline{pointer-events:auto;height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"><div class="maplibregl-canvas-container"><canvas data-weather-map></canvas></div><button id="windy-menu" style="position:absolute;top:20px;left:20px;z-index:10;background:#182c40;color:white;padding:16px">Windy menu</button></div><aside id="windy-plugin-synoptic-atlas" class="native-plugin-frame" style="position:fixed;right:12px;top:120px;z-index:9999;background:#182c40"><button aria-label="Native plugin close">×</button><div id="plugin"></div></aside><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
 const events=new Map(),listeners=new Map(),container=document.querySelector('#map');let timestamp=${Date.parse(manifest.frames.find(f=>Date.parse(f.validTime)>=Date.now()-5400000).validTime)};
 const mercator=lat=>Math.log(Math.tan(Math.PI/4+Math.max(-85.051,Math.min(85.051,lat))*Math.PI/360));
 const map={getContainer:()=>container,getSize:()=>({x:innerWidth,y:innerHeight}),getBounds:()=>({getWest:()=>10,getEast:()=>65}),latLngToContainerPoint:([lat,lon])=>({x:(lon-10)/55*innerWidth,y:(mercator(55)-mercator(lat))/(mercator(55)-mercator(5))*innerHeight}),on:(name,fn)=>{if(!events.has(name))events.set(name,new Set());events.get(name).add(fn)},off:(name,fn)=>events.get(name)?.delete(fn)};
 const store={get:()=>timestamp,set:(name,value)=>{timestamp=value;for(const fn of listeners.values())fn()},on:(name,fn)=>{const key=Symbol();listeners.set(key,fn);return key},off:key=>listeners.delete(key)};
-window.W={map:{map},store};window.testHost={store,events,listeners,hostInputs:0};
+const broadcast={emit:(event,name)=>{testHost.closeRequests.push([event,name]);if(event==='rqstClose'&&name==='windy-plugin-synoptic-atlas')window.testPlugin.$destroy()}};
+window.W={map:{map},store,broadcast};window.testHost={store,events,listeners,hostInputs:0,closeRequests:[]};
 for(const name of ['pointerdown','touchstart','click'])document.querySelector('#bottom-wrapper').addEventListener(name,event=>{testHost.hostInputs++;event.preventDefault();},{passive:false});const mod=await import('/plugin.js');
 if(mod.__pluginConfig.name!=='windy-plugin-synoptic-atlas')throw Error('Wrong plugin identity: '+mod.__pluginConfig.name);
 window.testPlugin=new mod.default({target:document.querySelector('#plugin')});
@@ -105,7 +106,13 @@ try{
     }
     await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`test-output/standalone-${viewport.width}.png`});
     await page.getByRole('button',{name:'Minimize panel'}).click();await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).click();scenarios++;
-    await page.evaluate(()=>testPlugin.$destroy());assert.equal(await page.locator('[data-synoptic-contours]').count(),0);
+    if(viewport.width>600){
+      assert.equal(await page.locator('.native-plugin-frame').isVisible(),false,'Only the left controller should remain on desktop');
+      assert.ok(await page.locator('.atlas-controls').evaluate(el=>el.getBoundingClientRect().left<40));
+    }
+    await page.getByRole('button',{name:'Close plugin',exact:true}).click();
+    assert.deepEqual(await page.evaluate(()=>testHost.closeRequests),[['rqstClose','windy-plugin-synoptic-atlas']]);
+    assert.equal(await page.locator('.native-plugin-frame').evaluate(el=>el.style.getPropertyValue('display')),'','Original host style should be restored on destroy');scenarios++;assert.equal(await page.locator('[data-synoptic-contours]').count(),0);
     assert.equal(await page.locator('.atlas-controls').count(),0);
     assert.equal(await page.evaluate(()=>testHost.listeners.size+[...testHost.events.values()].reduce((sum,s)=>sum+s.size,0)),0);assert.deepEqual(errors,[]);scenarios++;
     await context.close();

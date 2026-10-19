@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { map } from '@windy/map';
   import store from '@windy/store';
+  import broadcast from '@windy/broadcast';
   import config from './pluginConfig';
   import { ContourOverlay, CONTOUR_FIELDS, PRESSURE_LEVELS, defaultContours, safeContourOptions } from './contours.mjs';
   import { mountControllerDock } from './controllerDock.mjs';
@@ -13,6 +14,7 @@
   const displayTime = (value: any) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   $: if (layer) layer.set(options, timestamp, enabled);
   function save() { try { localStorage.setItem('synoptic-atlas.options.v1', JSON.stringify(options)); } catch {} }
+  function closePlugin() { broadcast.emit('rqstClose', config.name); }
   function preset() {
     options = { ...options, gh: { ...options.gh, on: true, level: 500 }, temp: { ...options.temp, on: true, level: 850 } };
     save();
@@ -49,7 +51,7 @@
   <button class="restore" on:click={() => hidden = false}>Synoptic Atlas</button>
 {:else}
   <section class="panel" aria-label="Synoptic Atlas">
-    <header><strong>{config.title}</strong><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button></header>
+    <header><strong>{config.title}</strong><div class="panel-actions"><button aria-label="Minimize panel" on:click={() => hidden = true}>−</button><button aria-label="Close plugin" title="Close Synoptic Atlas" on:click={closePlugin}>×</button></div></header>
     {#each Object.keys(CONTOUR_FIELDS) as key}
       <div class="row">
         <label><input aria-label={CONTOUR_FIELDS[key].label + ' isolines'} type="checkbox" bind:checked={options[key].on} on:change={save} disabled={!enabled} /><span>{key === 'gh' ? 'Geopotential' : 'Temperature'}</span></label>
@@ -72,7 +74,7 @@
 </div>
 <style>
   .atlas-controls{position:fixed;left:12px;bottom:95px;z-index:10000;isolation:isolate;pointer-events:auto;width:280px;max-width:calc(100vw - 24px);font:12px/1.4 system-ui,sans-serif;color:#f0f5f8}
-  .panel,.restore{background:#142536;border:1px solid #526879;border-radius:12px;box-shadow:0 5px 20px #0005}.panel{padding:12px;max-height:calc(100dvh - 180px);overflow:auto;box-sizing:border-box}header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}header strong{font-size:17px}.restore{padding:10px}
+  .panel,.restore{background:#142536;border:1px solid #526879;border-radius:12px;box-shadow:0 5px 20px #0005}.panel{padding:12px;max-height:calc(100dvh - 180px);overflow:auto;box-sizing:border-box}header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}header strong{font-size:17px}.panel-actions{display:flex;gap:5px}.restore{padding:10px}
   button,select,input{font:inherit;color:inherit;background:#253d50;border:1px solid #526879;border-radius:6px;padding:5px 7px}button,select,summary{cursor:pointer}button:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #ffd166;outline-offset:2px}input[type=checkbox]{accent-color:#ffd166;width:15px;height:15px;margin:0}
   .row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0}.row label{font-size:12px}label{display:flex;align-items:center;gap:7px}.row select{font-size:11px;min-width:88px}.stamp{font-size:11px;color:#bdccd9;margin:8px 0}.error{background:#692f30;padding:8px;border-radius:6px;font-size:11px}p[role=status]{font-size:11px}.more{border-top:1px solid #42586b;margin-top:8px;padding-top:8px}summary{font-size:11px}.toolbar,.switches{display:flex;gap:8px;align-items:center;margin:10px 0}.switches button{margin-left:auto}button{font-size:11px}.spacing{justify-content:space-between;margin:10px 0;font-size:11px}small{display:block;font-size:10px;color:#bbcad6;margin-top:10px}
   @media(max-width:600px){
