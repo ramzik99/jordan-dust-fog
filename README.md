@@ -1,27 +1,17 @@
-# Synoptic Atlas — standalone Windy plugin
+# Synoptic Atlas — Windy contours
 
-Package ID: `windy-plugin-synoptic-atlas`. This is an independent contour-only plugin with its own UI, preferences and development preview. It uses NOAA GFS meteorology for worldwide contour overlays.
+Geopotential height and temperature contours follow the **forecast model selected in Windy** and its timeline. Switch models using Windy's normal selector; the plugin refreshes both layers automatically without changing the background overlay or native isolines.
 
-Tick geopotential height and temperature independently, or choose **Synoptic preset** for 500 hPa height + 850 hPa temperature. Upper-air levels: 925, 850, 700, 500 and 300 hPa. Each field has its own spacing. Lines and labels use the supplied value-based color palettes, without color legends.
+Each field has independent visibility, pressure level (925, 850, 700, 500 or 300 hPa), spacing, value-based colors and labels. The controller sits on the left on desktop and below the timeline on mobile. No color legend.
 
-Published version 1.2.1 — load this installation URL in Windy:
+The plugin reads Windy's native decoded forecast tiles for the selected model. Height is converted from metres to dam; temperature from Kelvin to Celsius. Tile values are interpolated estimates sampled on a bounded viewport grid, not original model grid values. Missing data and areas outside regional coverage remain blank. Unsupported models, levels and hours show an availability message; there is no fallback to a different forecast model. Long-range contours are available only where Windy supplies the selected model's forecast, including hour 360 when available.
 
-https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.1/plugin.min.js
+Model calendars and tile paths are resolved on each load. New data is checked every five minutes while the plugin is visible; update frequency and access follow Windy's model delivery and your account.
 
-Development preview:
+Development preview: https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@synoptic-preview/synoptic-atlas.js
 
-https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@synoptic-preview/synoptic-atlas.js
+Published installation URL (v1.2.3): https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.3/plugin.min.js
 
-The dedicated preview updates after its own build and browser tests pass. For a fixed version replace `synoptic-preview` with the preview branch's commit SHA. Publication to Windy hosting succeeded; inclusion in the public gallery is subject to Windy review.
+Build with `npm install` and `npm run build`. Run `npm test` for contour/provider unit tests. Browser regressions compile the real plugin against a simulated Windy host and exercise desktop/mobile controls, model changes, cancellations, unsupported fields and forecast range limits. The legacy GFS ingestion scripts remain for reference; the plugin no longer requests their data.
 
-Instantaneous fields are sampled to 1.25 degrees for contouring. The exact valid time is shown. No snapshot is used beyond 90 minutes from the requested Windy forecast time. Heights use dam, temperature Celsius. Below-terrain values and missing data are masked. Contours do not change Windy's background model or native isolines.
-
-Install dependencies with `npm install`, then run `npm run build`. The contour engine is `src/contours.mjs`; the UI and configuration are in `src/`.
-
-Run `npm test` for contour tests and `python -m unittest discover -s test -p 'test_synoptic.py'` for ingestion tests. For browser checks install Python requirements, run `npx playwright install chromium`, then `npm run test:browser`. Browser tests use a simulated Windy host; test the preview in your Windy account before publication.
-
-The former GEOS Dust plugin and its scheduled data updater have been removed. Only Synoptic Atlas is maintained here.
-
-The compact controller docks below Windy's timeline on phones; additional settings are under More. Contours render in the map layer beneath Windy's interface. Three-hourly forecast delivery extends through model hour 384 to cover the 360-hour Windy timeline. The contour source is independent of Windy’s background model.
-
-Version 1.2.1 was uploaded from the tested build at source commit `4f68ede14c09ef47f20e3144ebdb396099a074a3`. The publishing workflow is on the `publish-synoptic-atlas-1.2.1` branch of `ramzik99/wintry-forecast`, where the existing Windy publishing credential is configured. No Wintry Forecast code was changed.
+Package ID: `windy-plugin-synoptic-atlas`. Windy hosting publication and gallery review are separate.

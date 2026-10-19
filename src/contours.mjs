@@ -71,14 +71,14 @@ export function contourSegments(values, grid, step) {
     8: [[2,3]], 9: [[0,2]], 11: [[1,2]], 12: [[1,3]], 13: [[0,1]], 14: [[3,0]] };
   for (let n = 0; n < count; n++) {
     const level = first + n * step;
-    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < (grid.periodic === false ? w - 1 : w); x++) {
       const next = (x + 1) % w;
       const v = [values[y*w+x], values[y*w+next], values[(y+1)*w+next], values[(y+1)*w+x]];
       if (v.some(a => !Number.isFinite(a))) continue;
       const mask = v.reduce((m, a, i) => m | (a >= level ? 1 << i : 0), 0);
       if (!mask || mask === 15) continue;
       const pairs = mask === 5 || mask === 10 ? ((v[0]-level)*(v[2]-level)-(v[1]-level)*(v[3]-level) >= 0 ? [[0,1],[2,3]] : [[3,0],[1,2]]) : table[mask];
-      const positions = [[x0+x*d,y0+y*d],[x0+(x+1)*d,y0+y*d],[x0+(x+1)*d,y0+(y+1)*d],[x0+x*d,y0+(y+1)*d]];
+      const positions = [[x0+x*d,y0+y*(grid.latitudeStep ?? d)],[x0+(x+1)*d,y0+y*(grid.latitudeStep ?? d)],[x0+(x+1)*d,y0+(y+1)*(grid.latitudeStep ?? d)],[x0+x*d,y0+(y+1)*(grid.latitudeStep ?? d)]];
       const cross = edge => { const a = edge, b = (edge + 1) % 4, f = (level - v[a]) / (v[b] - v[a]); return [positions[a][0] + f * (positions[b][0]-positions[a][0]), positions[a][1] + f * (positions[b][1]-positions[a][1])]; };
       for (const [a,b] of pairs) { const p = cross(a), q = cross(b); if (p.every(Number.isFinite) && q.every(Number.isFinite) && Math.hypot(p[0]-q[0],p[1]-q[1]) > 1e-9) segments.push([p[0],p[1],q[0],q[1],level]); }
     }
@@ -134,59 +134,44 @@ export function drawContours(ctx, map, layers, options, width, height) {
   ctx.setLineDash([]);
 }
 export class ContourOverlay {
-  constructor({ map, onChange = () => {}, onRender = () => {}, fetcher = (...args) => globalThis.fetch(...args), base = CONTOUR_BASE }) {
-    this.map=map; this.onChange=onChange; this.onRender=onRender; this.fetcher=fetcher; this.base=base;
-    this.manifest=null; this.manifestAt=0; this.cache=new Map(); this.geometry=new Map(); this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
+  constructor({ map, provider, onChange = () => {}, onRender = () => {} }) {
+    this.map=map; this.provider=provider; this.onChange=onChange; this.onRender=onRender;
+    this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
     this.canvas=document.createElement('canvas'); this.canvas.dataset.synopticContours='map'; this.canvas.setAttribute('aria-hidden','true');
-    // Keep contours in the renderer's map layer, beneath Windy's UI siblings.
     Object.assign(this.canvas.style,{position:'absolute',left:'0',top:'0',pointerEvents:'none',zIndex:'0'});
     const surface=map.getContainer().querySelector('.maplibregl-canvas-container') || map.getContainer();
     surface.appendChild(this.canvas);
   }
-  set(options, timestamp, enabled) {
-    const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled]);
+  set(options, timestamp, enabled, product) {
+    const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled,product]);
     if(this.dead || signature===this.signature) return;
-    this.signature=signature; this.options=safe; this.timestamp=timestamp; this.enabled=enabled;
+    this.signature=signature; this.options=safe; this.timestamp=timestamp; this.enabled=enabled; this.product=product;
     this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.layers=[]; this.onRender();
     const fields=Object.keys(CONTOUR_FIELDS).filter(k=>safe[k].on);
     if(!enabled || !fields.length) { this.onChange({loading:false,errors:[],active:[]}); return; }
     this.onChange({loading:true,errors:[],active:[]});
-    this.timer=setTimeout(()=>void this.load(fields,this.epoch),120);
+    this.timer=setTimeout(()=>void this.load(fields,this.epoch),180);
   }
   async load(fields, epoch) {
-    const abort=new AbortController(); this.abort=abort; const timeout=setTimeout(()=>abort.abort(),45000), errors=[];
+    const abort=new AbortController(); this.abort=abort;
+    const timeout=setTimeout(()=>abort.abort(),30000), errors=[];
     try {
-      if(!this.manifest || Date.now()-this.manifestAt>300000) {
-        const response=await this.fetcher(this.base+'latest.json?t='+Math.floor(Date.now()/300000),{signal:abort.signal});
-        if(!response.ok) throw Error('Contour index unavailable (HTTP '+response.status+')');
-        const text=await response.text(); if(text.length>50000) throw Error('Contour index exceeds size limit');
-        const m=validateContourManifest(JSON.parse(text));
-        if(this.manifest && m.runTime<this.manifest.runTime) throw Error('Server returned an older contour run');
-        if(this.dead || epoch!==this.epoch) return; this.manifest=m; this.manifestAt=Date.now();
-      }
-      const m=validateContourManifest(this.manifest), frame=contourSnapshot(m,this.timestamp);
-      if(!frame) throw Error('No contour snapshot within 90 minutes of the Windy forecast time');
       await Promise.all(fields.map(async field=>{
-        const config=this.options[field], key=m.runTime+':'+frame.validTime+':'+field+':'+config.level;
+        const config=this.options[field];
         try {
-          let values=this.cache.get(key);
-          if(!values) {
-            const response=await this.fetcher(this.base+contourPath(m,frame,field,config.level),{signal:abort.signal});
-            if(!response.ok) throw Error('HTTP '+response.status);
-            values=validateContourField(await decodeFrameResponse(response),m,frame,field,config.level);
-          }
+          const result=await this.provider.load({map:this.map,product:this.product,timestamp:this.timestamp,field,level:config.level,abort});
           if(this.dead || epoch!==this.epoch || abort.signal.aborted) return;
-          this.cache.delete(key); this.cache.set(key,values); while(this.cache.size>9) this.cache.delete(this.cache.keys().next().value);
-          const geometryKey=key+':'+config.step;
-          let segments=this.geometry.get(geometryKey);
-          if(!segments) { segments=contourSegments(values,m.grid,config.step); this.geometry.set(geometryKey,segments); while(this.geometry.size>3) this.geometry.delete(this.geometry.keys().next().value); }
-          if(this.dead || epoch!==this.epoch) return;
-          this.layers.push({field,level:config.level,segments}); this.layers.sort((a,b)=>Object.keys(CONTOUR_FIELDS).indexOf(a.field)-Object.keys(CONTOUR_FIELDS).indexOf(b.field)); this.onRender();
-        } catch(error) { if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(error?.name==='AbortError'?'request timed out':error.message)); }
+          const segments=contourSegments(result.values,result.grid,config.step);
+          this.validTime=result.validTime;
+          this.layers.push({field,level:config.level,segments});
+          this.layers.sort((a,b)=>Object.keys(CONTOUR_FIELDS).indexOf(a.field)-Object.keys(CONTOUR_FIELDS).indexOf(b.field));
+          this.onRender();
+        } catch(error) {
+          if(epoch===this.epoch) errors.push(CONTOUR_FIELDS[field].label+': '+(abort.signal.aborted?'request timed out':error.message));
+        }
       }));
-      if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:frame.validTime,runTime:m.runTime});
-    } catch(error) { if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors:[error?.name==='AbortError'?'Contour request timed out':error.message],active:[]}); }
-    finally { clearTimeout(timeout); }
+      if(!this.dead && epoch===this.epoch) this.onChange({loading:false,errors,active:this.layers.map(l=>l.field),validTime:this.validTime,product:this.product});
+    } finally { clearTimeout(timeout); }
   }
   paint() {
     if(this.dead) return;
@@ -194,11 +179,11 @@ export class ContourOverlay {
     if(c.width!==Math.round(size.x*ratio) || c.height!==Math.round(size.y*ratio)) { c.width=Math.round(size.x*ratio); c.height=Math.round(size.y*ratio); }
     c.style.width=size.x+'px'; c.style.height=size.y+'px'; const ctx=c.getContext('2d'); if(!ctx) return;
     ctx.setTransform(ratio,0,0,ratio,0,0);
-    const fresh=this.manifest && Date.now()-Date.parse(this.manifest.runTime)<=MAX_RUN_AGE_MS;
-    const shown=this.enabled && fresh?this.layers:[];
+    const shown=this.enabled?this.layers:[];
     c.dataset.layers=shown.map(l=>l.field+':'+l.level).sort().join(',');
+    c.dataset.product=this.product || '';
     drawContours(ctx,this.map,shown,this.options,size.x,size.y);
   }
-  refresh() { this.manifestAt=0; this.signature=''; this.set(this.options,this.timestamp,this.enabled); }
-  destroy() { this.dead=true; this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.cache.clear(); this.geometry.clear(); this.layers=[]; this.canvas.remove(); }
+  refresh() { this.signature=''; this.set(this.options,this.timestamp,this.enabled,this.product); }
+  destroy() { this.dead=true; this.epoch++; this.abort?.abort(); clearTimeout(this.timer); this.layers=[]; this.provider?.destroy(); this.canvas.remove(); }
 }

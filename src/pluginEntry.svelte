@@ -4,15 +4,16 @@
   import store from '@windy/store';
   import broadcast from '@windy/broadcast';
   import config from './pluginConfig';
+  import { createWindyContourProvider } from './windyContours.mjs';
   import { ContourOverlay, CONTOUR_FIELDS, PRESSURE_LEVELS, defaultContours, safeContourOptions } from './contours.mjs';
   import { mountControllerDock } from './controllerDock.mjs';
   let releaseDock = () => {};
   let controls: HTMLDivElement;
   let options: any = defaultContours(), layer: any = null, enabled = true, hidden = false, destroyed = false;
-  let timestamp = Date.now(), status: any = { loading: false, errors: [], active: [] };
-  let listener: any, timer: any, clock: any, animation = 0, observer: ResizeObserver | null = null;
+  let product = '', timestamp = Date.now(), status: any = { loading: false, errors: [], active: [] };
+  let listener: any, modelListener: any, timer: any, clock: any, animation = 0, observer: ResizeObserver | null = null;
   const displayTime = (value: any) => new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  $: if (layer) layer.set(options, timestamp, enabled);
+  $: if (layer) layer.set(options, timestamp, enabled, product);
   function save() { try { localStorage.setItem('synoptic-atlas.options.v1', JSON.stringify(options)); } catch {} }
   function closePlugin() { broadcast.emit('rqstClose', config.name); }
   function preset() {
@@ -20,6 +21,7 @@
     save();
   }
   function clear() { options = { ...options, ...Object.fromEntries(Object.keys(CONTOUR_FIELDS).map(k => [k, { ...options[k], on: false }])) }; save(); }
+  function refreshViewport() { layer?.refresh(); }
   function render() {
     if (destroyed || animation) return;
     animation = requestAnimationFrame(() => { animation = 0; layer?.paint(); });
@@ -29,8 +31,11 @@
     releaseDock = mountControllerDock(controls);
     try { options = safeContourOptions(JSON.parse(localStorage.getItem('synoptic-atlas.options.v1') || 'null')); } catch {}
     timestamp = Number(store.get('timestamp')) || Date.now();
-    layer = new ContourOverlay({ map, onChange: value => { status = value; }, onRender: render });
+    product = String(store.get('product') || '');
+    layer = new ContourOverlay({ map, provider: createWindyContourProvider(), onChange: value => { status = value; }, onRender: render });
     listener = store.on('timestamp', () => { timestamp = Number(store.get('timestamp')); });
+    modelListener = store.on('product', () => { product = String(store.get('product') || ''); });
+    map.on('moveend', refreshViewport); map.on('zoomend', refreshViewport);
     map.on('move', render); map.on('zoom', render); map.on('resize', render);
     if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(render); observer.observe(map.getContainer()); }
     timer = setInterval(() => { if (enabled && !document.hidden) layer?.refresh(); }, 300000);
@@ -41,8 +46,10 @@
     controls?.remove();
     destroyed = true; layer?.destroy(); layer = null; if (animation) cancelAnimationFrame(animation);
     clearInterval(timer); clearInterval(clock); observer?.disconnect();
+    map.off('moveend', refreshViewport); map.off('zoomend', refreshViewport);
     map.off('move', render); map.off('zoom', render); map.off('resize', render);
     if (listener != null) store.off(listener);
+    if (modelListener != null) store.off(modelListener);
   });
 </script>
 
@@ -58,6 +65,7 @@
         <select aria-label={CONTOUR_FIELDS[key].label + ' pressure level'} bind:value={options[key].level} on:change={save} disabled={!enabled}>{#each PRESSURE_LEVELS as level}<option value={level}>{level} hPa</option>{/each}</select>
       </div>
     {/each}
+    <p class="stamp" data-testid="contour-model">Model: {product.toUpperCase() || 'Unavailable'}</p>
     {#if status.loading}<p role="status">Loading contours…</p>{/if}
     {#each status.errors as message}<p class="error" role="alert">{message}</p>{/each}
     {#if status.validTime && status.active.length}<p class="stamp" data-testid="contour-time">Valid {displayTime(status.validTime)}</p>{/if}
@@ -67,7 +75,7 @@
       {#each Object.keys(CONTOUR_FIELDS) as key}
         <label class="spacing">{key === 'gh' ? 'Height interval' : 'Temperature interval'}<select aria-label={CONTOUR_FIELDS[key].label + ' contour spacing'} bind:value={options[key].step} on:change={save} disabled={!enabled}>{#each CONTOUR_FIELDS[key].steps as step}<option value={step}>{step} {key === 'temp' ? '°C' : 'dam'}</option>{/each}</select></label>
       {/each}
-      <small>Times use your device timezone. Height in dam; temperature in °C.</small>
+      <small>Follows Windy’s selected model and available forecast range. Times use your device timezone. Height in dam; temperature in °C.</small>
     </details>
   </section>
 {/if}

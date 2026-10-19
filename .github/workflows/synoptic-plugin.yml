@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --ignore-scripts
-      - run: node --test test/contours.test.mjs
+      - run: node --test test/*.test.mjs
       - run: npm run build
       - name: Verify standalone package identity
         run: |
@@ -30,6 +30,8 @@ jobs:
       - run: python scripts/browser_fixture.py
       - run: npx playwright install --with-deps chromium
       - run: node test/synoptic-browser.mjs
+      - name: Verify live Windy model fields
+        run: node scripts/probe_windy_models.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

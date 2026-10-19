@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "description": "Independent geopotential height and temperature isolines for Windy",
   "type": "module",
   "main": "dist/plugin.min.js",
@@ -8,7 +8,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "rollup -w -c",
-    "test": "node --test test/contours.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "test:browser": "python scripts/browser_fixture.py && node test/synoptic-browser.mjs"
   },
   "dependencies": {
