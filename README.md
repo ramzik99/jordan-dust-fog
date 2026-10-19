@@ -12,6 +12,6 @@ Development preview: https://cdn.jsdelivr.net/gh/ramzik99/jordan-dust-fog@synopt
 
 Published installation URL (v1.2.3): https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.3/plugin.min.js
 
-Build with `npm install` and `npm run build`. Run `npm test` for contour/provider unit tests. Browser regressions compile the real plugin against a simulated Windy host and exercise desktop/mobile controls, model changes, cancellations, unsupported fields and forecast range limits. The legacy GFS ingestion scripts remain for reference; the plugin no longer requests their data.
+Build with `npm install` and `npm run build`. Run `npm test` for contour/provider unit tests. Browser regressions compile the real plugin against a simulated Windy host and exercise desktop/mobile controls, model changes, cancellations, unsupported fields and forecast range limits. The legacy GFS ingestion scripts remain available manually; their automatic schedule is disabled, and the plugin no longer requests their data.
 
 Package ID: `windy-plugin-synoptic-atlas`. Windy hosting publication and gallery review are separate.

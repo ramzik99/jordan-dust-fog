@@ -1,12 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createTileContourProvider,viewportGrid,scalarValue,wrapLongitude} from '../src/windyContourData.mjs';
+import {createTileContourProvider,viewportGrid,scalarValue,wrapLongitude,windyPathTime} from '../src/windyContourData.mjs';
 import {contourSegments} from '../src/contours.mjs';
 const map={getBounds:()=>({getWest:()=>170,getEast:()=>190,getSouth:()=>-10,getNorth:()=>10}),getSize:()=>({x:60,y:60}),getZoom:()=>4};
 function fixture(){
  const calls=[],freed=[],catalog={};
  for(const name of ['ecmwf','gfs','icon'])catalog[name]={modelName:name,isolines:['gh'],overlays:['temp'],levels:['500h','850h'],getCalendar:async()=>({timestamps:[1000,2000]}),pointIsInBounds:()=>true};
- const provider=createTileContourProvider({products:catalog,createParams:async(field,params,time)=>{calls.push({field,...params,time});return {...params,path:'2026/10/19/12',refTime:'run',fullPath:params.product+'/'+field+'/<z>/<x>/<y>'}},getDataZoom:()=>1,Interpolator:class{createFun(cb){cb(async(p,a,params)=>[params.overlay==='gh'?5600:273.15,0,0])}destroy(){}},tiles:{get:async url=>({value:{valid:true},url}),free:t=>freed.push(t)},applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])});
+ const provider=createTileContourProvider({products:catalog,createParams:async(field,params,time)=>{calls.push({field,...params,time});return {...params,path:'2026101912',refTime:'run',fullPath:params.product+'/'+field+'/<z>/<x>/<y>'}},getDataZoom:()=>1,Interpolator:class{createFun(cb){cb(async(p,a,params)=>[params.overlay==='gh'?5600:273.15,0,0])}destroy(){}},tiles:{get:async url=>({value:{valid:true},url}),free:t=>freed.push(t)},applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])});
  return {provider,calls,freed,catalog};
 }
 test('Windy scalar units and missing values are explicit',()=>{
@@ -43,4 +43,9 @@ test('a cancelled request settles even when host calendar never resolves',async(
  const {provider,catalog}=fixture();catalog.ecmwf.getCalendar=()=>new Promise(()=>{});
  const abort=new AbortController(),pending=provider.load({map,product:'ecmwf',timestamp:1500,field:'gh',level:500,abort});
  abort.abort();await assert.rejects(pending,{name:'AbortError'});provider.destroy();
+});
+
+test('Windy compact and legacy forecast paths decode to the actual valid time',()=>{
+ for(const path of ['2026101912','2026/10/19/12','202610191200'])assert.equal(windyPathTime(path),Date.parse('2026-10-19T12:00:00Z'));
+ assert.ok(Number.isNaN(windyPathTime('not-a-time')));
 });

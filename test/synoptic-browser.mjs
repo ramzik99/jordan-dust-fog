@@ -13,7 +13,7 @@ const broadcast={emit:(event,name)=>{testHost.closeRequests.push([event,name]);i
 window.testHost={store,events,listeners,hostInputs:0,closeRequests:[],fail:'',delay:0,requests:[],freed:0};
 const model=(name,hours=384)=>({modelName:name,levels:['925h','850h','700h','500h','300h'],isolines:['gh'],overlays:['temp'],getCalendar:async()=>({timestamps:[${Date.parse(manifest.runTime)},${Date.parse(manifest.runTime)}+hours*3600000]}),pointIsInBounds:()=>true});
 const products={ecmwf:model('ECMWF'),gfs:model('GFS'),icon:model('ICON',120),mblue:{...model('Meteoblue'),levels:['surface'],isolines:[]}};
-const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','/').replace('T','/'),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
+const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','').replace('T',''),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
 class TileLayerInterpolator{createFun(cb){cb(async({lat,lon},abort,params)=>{
 if(testHost.delay)await new Promise(r=>setTimeout(r,testHost.delay));
 if(testHost.fail===params.layer)throw Error('HTTP 503');

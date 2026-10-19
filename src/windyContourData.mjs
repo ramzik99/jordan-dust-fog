@@ -8,6 +8,11 @@ export function viewportGrid(map) {
   const height=Math.max(3,Math.min(73,Math.ceil(size.y/18)+1));
   return {width,height,longitudeStart:west,latitudeStart:south,step:span/(width-1),latitudeStep:(north-south)/(height-1),periodic:false};
 }
+export function windyPathTime(path) {
+  const compact=String(path).replaceAll('/','');
+  if(!/^\d{10}(\d{2})?$/.test(compact))return NaN;
+  return Date.parse(compact.slice(0,4)+'-'+compact.slice(4,6)+'-'+compact.slice(6,8)+'T'+compact.slice(8,10)+':'+(compact.slice(10,12)||'00')+':00Z');
+}
 function interrupted() { return new DOMException('Request cancelled','AbortError'); }
 function checked(promise, signal) {
   if(signal.aborted) return Promise.reject(interrupted());
@@ -45,7 +50,7 @@ export function createTileContourProvider({products,createParams,getDataZoom,Int
         if(!Array.isArray(times)||!times.length||!Number.isFinite(timestamp)||timestamp<times[0]||timestamp>times.at(-1))throw Error('Outside selected model forecast range');
         const params=await checked(createParams(field,{product,overlay:field,level:nativeLevel},timestamp),abort.signal);
         if(params.product!==product||params.level!==nativeLevel)throw Error('Windy returned a different model or pressure level');
-        const validTime=Date.parse(params.path.replace(/^(\d{4})\/(\d\d)\/(\d\d)\/(\d\d)$/,'$1-$2-$3T$4:00:00Z'));
+        const validTime=windyPathTime(params.path);
         if(!Number.isFinite(validTime))throw Error('Forecast time unavailable');
         interpolator=new Interpolator();
         const sample=await checked(new Promise(resolve=>interpolator.createFun(resolve)),abort.signal);
