@@ -12,7 +12,7 @@ try{
  const result=await page.evaluate(async({coreURL,readerURL})=>{
   const {createTileContourProvider}=await import(coreURL);
   const {createWindyTileReader,sampleTile}=await import(readerURL);
-  const provider=createTileContourProvider({products:W.products,createParams:W.renderUtils.createFullRenderingParams,getDataZoom:W.renderUtils.getDataZoom,tiles:createWindyTileReader(W.tileLayerSource),sampleTile,applyUrlTemplate:W.tileHelpers.applyUrlTemplate});
+  const provider=createTileContourProvider({products:W.products,createParams:W.renderUtils.createFullRenderingParams,getDataZoom:W.renderUtils.getDataZoom,tiles:createWindyTileReader({...W.tileLayerSource,decodeImage:W.imageFetch.rawDataToCanvasImageSource,readPixels:W.imageFetch.getImageData}),sampleTile,applyUrlTemplate:W.tileHelpers.applyUrlTemplate});
   const native=W.map.map,results=[];
   const map={getBounds:()=>({getWest:()=>30,getEast:()=>40,getSouth:()=>25,getNorth:()=>40}),getSize:()=>({x:90,y:90}),getZoom:()=>native.getZoom(),maplibreMap:native.maplibreMap};
   try{

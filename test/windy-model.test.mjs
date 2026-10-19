@@ -1,4 +1,4 @@
-import {sampleTile} from '../src/windyTileReader.mjs';
+import {sampleTile,createWindyTileReader} from '../src/windyTileReader.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createTileContourProvider,viewportGrid,scalarValue,wrapLongitude,windyPathTime} from '../src/windyContourData.mjs';
@@ -59,4 +59,20 @@ test('tile decoder matches native bilinear scalar interpolation and transparency
  tile.pixels[3]=255;tile.pixels[6]=200;
  assert.equal(sampleTile(tile,{JPGtransparency:true},{x:.5,y:.5}),null);
  assert.equal(sampleTile({valid:false},{},{x:0,y:0}),null);
+});
+
+test('tile reader accepts current and legacy fetch results, reuses images and closes bitmaps',async()=>{
+ for(const modern of [true,false]){
+  let fetched=0,closed=0;
+  const image=()=>({width:2,height:2,close:()=>closed++});
+  const reader=createWindyTileReader({
+   fetchImageBlob:async()=>{fetched++;const blob=new Blob(['fixture']);return modern?{valid:true,blob}:blob;},
+   decodeImage:async()=>image(),extractTileHeader:async()=>({image:image(),header:{decoderRmin:200,decoderRstep:1}}),
+   readPixels:async()=>new Uint8ClampedArray(16)
+  });
+  const a=await reader.get('ecmwf/gh-500h'),b=await reader.get('ecmwf/gh-500h');
+  assert.equal(a.value,b.value);assert.equal(fetched,1);assert.equal(closed,2);
+  await reader.get('ecmwf/gh-700h');assert.equal(fetched,2);
+  reader.destroy();
+ }
 });

@@ -13,7 +13,7 @@ const broadcast={emit:(event,name)=>{testHost.closeRequests.push([event,name]);i
 window.testHost={store,events,listeners,hostInputs:0,closeRequests:[],fail:'',delay:0,requests:[],freed:0};
 const model=(name,hours=384)=>({modelName:name,levels:['925h','850h','700h','500h','300h'],isolines:['gh'],overlays:['temp'],getCalendar:async()=>({timestamps:[${Date.parse(manifest.runTime)},${Date.parse(manifest.runTime)}+hours*3600000]}),pointIsInBounds:()=>true});
 const products={ecmwf:model('ECMWF'),gfs:model('GFS'),icon:model('ICON',120),mblue:{...model('Meteoblue'),levels:['surface'],isolines:[]}};
-const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','').replace('T',''),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/'+time+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
+const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','').replace('T',''),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/'+params.level+'/'+time+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
 class TileLayerInterpolator{createFun(cb){cb(async({lat,lon},abort,params)=>{
 if(testHost.delay)await new Promise(r=>setTimeout(r,testHost.delay));
 if(testHost.fail===params.layer)throw Error('HTTP 503');
@@ -29,7 +29,7 @@ async function fetchImageBlob(url){
  const ctx=c.getContext('2d'),im=ctx.createImageData(257,257);
  for(let y=0;y<257;y++)for(let x=0;x<257;x++){const i=(y*257+x)*4;
  im.data[i]=Math.round(((tx+x/256)+(ty+y/256))/(2*2**z)*220)+(parts[1]==='gfs'?15:0);im.data[i+1]=field==='gh'?1:2;im.data[i+3]=255;}
- ctx.putImageData(im,0,0);return await new Promise(resolve=>c.toBlob(resolve));
+ ctx.putImageData(im,0,0);return await new Promise(resolve=>c.toBlob(blob=>resolve({valid:true,blob})));
 }
 async function extractTileHeader(image){
  const c=document.createElement('canvas');c.width=c.height=1;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);

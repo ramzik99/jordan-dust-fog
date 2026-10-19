@@ -13,25 +13,30 @@ export function sampleTile(tile,params,point) {
   }
   return [values[0]*(1-fx)*(1-fy)+values[1]*fx*(1-fy)+values[2]*(1-fx)*fy+values[3]*fx*fy,0,0];
 }
-export function createWindyTileReader({fetchImageBlob,extractTileHeader}) {
+export function createWindyTileReader({fetchImageBlob,extractTileHeader,decodeImage=blob=>createImageBitmap(blob),readPixels}) {
   const cache=new Map();
   return {
     async get(url,signal) {
       let pending=cache.get(url);
       if(!pending) {
         pending=(async()=>{
-          const blob=await fetchImageBlob(url,signal);
+          const response=await fetchImageBlob(url,signal);
+          const blob=response instanceof Blob?response:response?.valid?response.blob:null;
           if(!blob)throw Error('Windy forecast tile unavailable');
           let original,image;
           try {
-            original=await createImageBitmap(blob);
+            original=await decodeImage(blob);
             const decoded=await extractTileHeader(original);image=decoded.image;
-            const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(image.width,image.height):document.createElement('canvas');
-            canvas.width=image.width;canvas.height=image.height;
-            const ctx=canvas.getContext('2d',{willReadFrequently:true});
-            if(!ctx)throw Error('Tile decoder unavailable');
-            ctx.drawImage(image,0,0);
-            const pixels=ctx.getImageData(0,0,image.width,image.height).data;
+            let pixels;
+            if(readPixels)pixels=await readPixels(image);
+            else {
+              const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(image.width,image.height):document.createElement('canvas');
+              canvas.width=image.width;canvas.height=image.height;
+              const ctx=canvas.getContext('2d',{willReadFrequently:true});
+              if(!ctx)throw Error('Tile decoder unavailable');
+              ctx.drawImage(image,0,0);
+              pixels=ctx.getImageData(0,0,image.width,image.height).data;
+            }
             return {valid:true,width:image.width,height:image.height,pixels,header:decoded.header};
           } finally {image?.close();original?.close();}
         })();
