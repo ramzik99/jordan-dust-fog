@@ -2,11 +2,11 @@
 
 Package ID: `windy-plugin-synoptic-atlas`. This is an independent contour-only plugin with its own UI, preferences and development preview. It uses NOAA GFS meteorology for worldwide contour overlays.
 
-Tick geopotential height and temperature independently, or choose **Synoptic preset** for 500 hPa height + 850 hPa temperature. Upper-air levels: 925, 850, 700, 500 and 300 hPa. Each field has its own spacing. Lines and labels use the supplied value-based color palettes, with expandable legends.
+Tick geopotential height and temperature independently, or choose **Synoptic preset** for 500 hPa height + 850 hPa temperature. Upper-air levels: 925, 850, 700, 500 and 300 hPa. Each field has its own spacing. Lines and labels use the supplied value-based color palettes, without color legends.
 
-Published version 1.2.0 — load this installation URL in Windy:
+Published version 1.2.1 — load this installation URL in Windy:
 
-https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.0/plugin.min.js
+https://windy-plugins.com/458307/windy-plugin-synoptic-atlas/1.2.1/plugin.min.js
 
 Development preview:
 
@@ -22,6 +22,6 @@ Run `npm test` for contour tests and `python -m unittest discover -s test -p 'te
 
 The former GEOS Dust plugin and its scheduled data updater have been removed. Only Synoptic Atlas is maintained here.
 
-Compact controls stay above map overlays; additional settings are under More. Three-hourly forecast delivery extends through model hour 384 to cover the 360-hour Windy timeline. The contour source is independent of Windy’s background model.
+The compact controller docks below Windy's timeline on phones; additional settings are under More. Contours render in the map layer beneath Windy's interface. Three-hourly forecast delivery extends through model hour 384 to cover the 360-hour Windy timeline. The contour source is independent of Windy’s background model.
 
-Version 1.2.0 was uploaded from the tested build at source commit `64bde0f5bf8a5375e9d4df7261682d264b565ce6`. The publishing workflow is on the `publish-synoptic-atlas-1.2.0` branch of `ramzik99/wintry-forecast`, where the existing Windy publishing credential is configured. No Wintry Forecast code was changed.
+Version 1.2.1 was uploaded from the tested build at source commit `4f68ede14c09ef47f20e3144ebdb396099a074a3`. The publishing workflow is on the `publish-synoptic-atlas-1.2.1` branch of `ramzik99/wintry-forecast`, where the existing Windy publishing credential is configured. No Wintry Forecast code was changed.
