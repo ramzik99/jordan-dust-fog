@@ -1,0 +1,25 @@
+name: Inspect Windy model interfaces
+on:
+  push:
+    branches: [inspect-windy-model]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - run: |
+          find node_modules/@windycom -iname '*renderUtils*' -o -iname '*tileInterpolator*' -o -iname '*products*' -o -iname '*overlays*' -o -iname '*tileLayerSource*'
+          grep -R -A60 -B5 'createFullRenderingParams\|interface FullRenderParameters\|interface Product\|class TileLayerInterpolator' node_modules/@windycom --include='*.d.ts' | head -500
+          curl -s https://www.windy.com/ > /tmp/windy.html
+          python - <<'PY'
+          import re
+          s=open('/tmp/windy.html').read()
+          print('WINDY SCRIPTS',re.findall(r'<script[^>]+src="([^"]+)',s))
+          print('GH CONFIG',*[s[max(0,m.start()-150):m.end()+250] for m in re.finditer('geopotential|gh:',s)][:12],sep='\n')
+          PY
