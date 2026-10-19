@@ -36,7 +36,8 @@ async function extractTileHeader(image){
  const gh=ctx.getImageData(0,0,1,1).data[1]===1;
  return {image,header:{decoderRmin:gh?5400:250,decoderRstep:gh?2:.2}};
 }
-window.W={map:{map},store,broadcast,products,renderUtils,tileInterpolator:{TileLayerInterpolator},tileLayerSource:{tileLayerSource:tiles,fetchImageBlob,extractTileHeader},tileHelpers:{applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])}};
+const imageFetch={rawDataToCanvasImageSource:blob=>createImageBitmap(blob),getImageData:async image=>{const c=document.createElement('canvas');c.width=image.width;c.height=image.height;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);return ctx.getImageData(0,0,c.width,c.height).data;}};
+window.W={map:{map},store,broadcast,products,renderUtils,imageFetch,tileInterpolator:{TileLayerInterpolator},tileLayerSource:{tileLayerSource:tiles,fetchImageBlob,extractTileHeader},tileHelpers:{applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])}};
 for(const name of ['pointerdown','touchstart','click'])document.querySelector('#bottom-wrapper').addEventListener(name,event=>{testHost.hostInputs++;event.preventDefault();},{passive:false});const mod=await import('/plugin.js');
 if(mod.__pluginConfig.name!=='windy-plugin-synoptic-atlas')throw Error('Wrong plugin identity: '+mod.__pluginConfig.name);
 window.testPlugin=new mod.default({target:document.querySelector('#plugin')});
