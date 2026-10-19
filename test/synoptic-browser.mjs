@@ -44,6 +44,7 @@ try{
       await page.getByLabel('Contour labels',{exact:true}).tap();
       await page.getByRole('button',{name:'Minimize panel'}).tap();
       await page.getByRole('button',{name:'Synoptic Atlas',exact:true}).tap();
+      await page.locator('.more > summary').tap();
       assert.equal(await page.evaluate(()=>testHost.hostInputs),0,'Control taps must not reach timeline gesture handlers');
       await page.locator('#timeline').tap();
       assert.ok(await page.evaluate(()=>testHost.hostInputs)>0,'Timeline must retain its own input handling');
