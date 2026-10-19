@@ -8,18 +8,16 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm install --ignore-scripts
       - run: |
-          find node_modules/@windycom -iname '*renderUtils*' -o -iname '*tileInterpolator*' -o -iname '*products*' -o -iname '*overlays*' -o -iname '*tileLayerSource*'
-          grep -R -A60 -B5 'createFullRenderingParams\|interface FullRenderParameters\|interface Product\|class TileLayerInterpolator' node_modules/@windycom --include='*.d.ts' | head -500
-          curl -s https://www.windy.com/ > /tmp/windy.html
+          curl -fsS https://www.windy.com/v/51.3.2.ind.81aa/index.js -o /tmp/windy.js
           python - <<'PY'
           import re
-          s=open('/tmp/windy.html').read()
-          print('WINDY SCRIPTS',re.findall(r'<script[^>]+src="([^"]+)',s))
-          print('GH CONFIG',*[s[max(0,m.start()-150):m.end()+250] for m in re.finditer('geopotential|gh:',s)][:12],sep='\n')
+          s=open('/tmp/windy.js').read()
+          for key in ['fetchImageBlob:','extractTileHeader:']:
+              i=s.find(key);print('EXPORT',s[i-100:i+800])
+              name=re.search(key+r'\\(\\)=>?([\\w$]+)',s[i:]) if False else s[i+len(key):i+len(key)+100]
+              print('FOLLOW',name)
+          for m in re.finditer(r'async function \\w+\\(',s):
+              p=s[m.start():m.start()+1800]
+              if 'blob()' in p or 'decoder' in p or 'createImageBitmap' in p:print('FUNCTION',p)
           PY
