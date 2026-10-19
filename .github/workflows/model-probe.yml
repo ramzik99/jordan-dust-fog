@@ -11,13 +11,8 @@ jobs:
       - run: |
           curl -fsS https://www.windy.com/v/51.3.2.ind.81aa/index.js -o /tmp/windy.js
           python - <<'PY'
-          import re
           s=open('/tmp/windy.js').read()
-          for key in ['fetchImageBlob:','extractTileHeader:']:
-              i=s.find(key);print('EXPORT',s[i-100:i+800])
-              name=re.search(key+r'\\(\\)=>?([\\w$]+)',s[i:]) if False else s[i+len(key):i+len(key)+100]
-              print('FOLLOW',name)
-          for m in re.finditer(r'async function \\w+\\(',s):
-              p=s[m.start():m.start()+1800]
-              if 'blob()' in p or 'decoder' in p or 'createImageBitmap' in p:print('FUNCTION',p)
+          for key in ['function Jv(', 'Jv=', 'function qv(', 'qv=', 'function Rv(', 'function nv(']:
+              i=s.find(key)
+              if i>=0:print('SOURCE',key,s[i:i+4000])
           PY
