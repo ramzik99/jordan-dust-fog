@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "icon": "🌐",
   "title": "Synoptic Atlas",
   "description": "Independent geopotential height and temperature isolines, with pressure levels and labels.",
@@ -10,6 +10,6 @@
   "mobileUI": "small",
   "addToContextmenu": false,
   "listenToSingleclick": false,
-  "built": 1792355092751,
-  "builtReadable": "2026-10-18T20:24:52.751Z"
+  "built": 1792402549233,
+  "builtReadable": "2026-10-19T09:35:49.233Z"
 }

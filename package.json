@@ -1,6 +1,6 @@
 {
   "name": "windy-plugin-synoptic-atlas",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Independent geopotential height and temperature isolines for Windy",
   "type": "module",
   "main": "dist/plugin.min.js",
