@@ -73,14 +73,14 @@ try{
       });
       assert.equal(await belowTimeline(),true,'Mobile controller must be below timeline and within screen');
       await page.setViewportSize({width:844,height:390});
-      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement===document.body);
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls')?.parentElement===document.body);
       await page.setViewportSize(viewport);
-      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement.id==='bottom-wrapper');
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls')?.parentElement?.id==='bottom-wrapper');
       assert.equal(await belowTimeline(),true,'Dock should recover after rotation');
       await page.evaluate(()=>document.querySelector('#bottom-wrapper').remove());
-      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement===document.body);
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls')?.parentElement===document.body);
       await page.evaluate(()=>document.body.insertAdjacentHTML('beforeend','<section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section>'));
-      await page.waitForFunction(()=>document.querySelector('.atlas-controls').parentElement.id==='bottom-wrapper');
+      await page.waitForFunction(()=>document.querySelector('.atlas-controls')?.parentElement?.id==='bottom-wrapper');
       assert.equal(await belowTimeline(),true,'Dock should recover after timeline remount');scenarios++;
     }
     await page.locator('.panel').evaluate(el=>el.scrollTop=0);await page.screenshot({path:`test-output/standalone-${viewport.width}.png`});
