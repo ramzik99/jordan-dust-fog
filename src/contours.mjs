@@ -138,7 +138,10 @@ export class ContourOverlay {
     this.map=map; this.onChange=onChange; this.onRender=onRender; this.fetcher=fetcher; this.base=base;
     this.manifest=null; this.manifestAt=0; this.cache=new Map(); this.geometry=new Map(); this.layers=[]; this.epoch=0; this.dead=false; this.signature=''; this.options=defaultContours();
     this.canvas=document.createElement('canvas'); this.canvas.dataset.synopticContours='map'; this.canvas.setAttribute('aria-hidden','true');
-    Object.assign(this.canvas.style,{position:'absolute',left:'0',top:'0',pointerEvents:'none',zIndex:'450'}); map.getContainer().appendChild(this.canvas);
+    // Keep contours in the renderer's map layer, beneath Windy's UI siblings.
+    Object.assign(this.canvas.style,{position:'absolute',left:'0',top:'0',pointerEvents:'none',zIndex:'0'});
+    const surface=map.getContainer().querySelector('.maplibregl-canvas-container') || map.getContainer();
+    surface.appendChild(this.canvas);
   }
   set(options, timestamp, enabled) {
     const safe=safeContourOptions(options), signature=JSON.stringify([safe,timestamp,enabled]);

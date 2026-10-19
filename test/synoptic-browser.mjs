@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const manifest=JSON.parse(await readFile('test-fixture/contours/latest.json','utf8'));
-const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column}#timeline{height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
+const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#879ca9}#map{position:absolute;inset:0;overflow:hidden;z-index:2}#plugin{position:relative;z-index:0}#bottom-wrapper{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9000;flex-direction:column}#timeline{height:48px;background:#344658;color:white;box-sizing:border-box;padding:12px}@media(max-width:600px){#bottom-wrapper{display:flex}}</style></head><body><div id="map"><div class="maplibregl-canvas-container"><canvas data-weather-map></canvas></div><button id="windy-menu" style="position:absolute;top:20px;left:20px;z-index:10;background:#182c40;color:white;padding:16px">Windy menu</button></div><div id="plugin"></div><section id="bottom-wrapper"><div id="timeline">Windy timeline</div><span data-plugin="bottom-below-controls-mobile"></span></section><script type="module">
 const events=new Map(),listeners=new Map(),container=document.querySelector('#map');let timestamp=${Date.parse(manifest.frames.find(f=>Date.parse(f.validTime)>=Date.now()-5400000).validTime)};
 const mercator=lat=>Math.log(Math.tan(Math.PI/4+Math.max(-85.051,Math.min(85.051,lat))*Math.PI/360));
 const map={getContainer:()=>container,getSize:()=>({x:innerWidth,y:innerHeight}),getBounds:()=>({getWest:()=>10,getEast:()=>65}),latLngToContainerPoint:([lat,lon])=>({x:(lon-10)/55*innerWidth,y:(mercator(55)-mercator(lat))/(mercator(55)-mercator(5))*innerHeight}),on:(name,fn)=>{if(!events.has(name))events.set(name,new Set());events.get(name).add(fn)},off:(name,fn)=>events.get(name)?.delete(fn)};
@@ -38,6 +38,9 @@ try{
       const rect=el.getBoundingClientRect();const top=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
       return !!top?.closest('.panel');
     }),true,'Panel must be above contours even when plugin host is below map');scenarios++;
+    assert.equal(await page.locator('[data-synoptic-contours]').evaluate(el=>el.parentElement.classList.contains('maplibregl-canvas-container')),true);
+    assert.equal(await page.locator('[data-synoptic-contours]').evaluate(el=>getComputedStyle(el).zIndex),'0');
+    await page.getByRole('button',{name:'Windy menu',exact:true}).click();scenarios++;
     for(const [field,remaining] of [['Geopotential height','temp:850'],['Temperature','gh:500']]){
       await page.getByLabel(field+' isolines',{exact:true}).uncheck();await active(remaining);
       await page.getByLabel(field+' isolines',{exact:true}).check();await active('gh:500,temp:850');scenarios++;
