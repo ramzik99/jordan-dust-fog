@@ -13,7 +13,7 @@ const broadcast={emit:(event,name)=>{testHost.closeRequests.push([event,name]);i
 window.testHost={store,events,listeners,hostInputs:0,closeRequests:[],fail:'',delay:0,requests:[],freed:0};
 const model=(name,hours=384)=>({modelName:name,levels:['925h','850h','700h','500h','300h'],isolines:['gh'],overlays:['temp'],getCalendar:async()=>({timestamps:[${Date.parse(manifest.runTime)},${Date.parse(manifest.runTime)}+hours*3600000]}),pointIsInBounds:()=>true});
 const products={ecmwf:model('ECMWF'),gfs:model('GFS'),icon:model('ICON',120),mblue:{...model('Meteoblue'),levels:['surface'],isolines:[]}};
-const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','').replace('T',''),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
+const renderUtils={createFullRenderingParams:async(field,params,time)=>{testHost.requests.push({...params,time});return {...params,layer:field,path:new Date(time).toISOString().slice(0,13).replaceAll('-','').replace('T',''),refTime:'test-run',fullPath:'tile/'+params.product+'/'+field+'/'+time+'/<z>/<x>/<y>'}},getDataZoom:()=>2};
 class TileLayerInterpolator{createFun(cb){cb(async({lat,lon},abort,params)=>{
 if(testHost.delay)await new Promise(r=>setTimeout(r,testHost.delay));
 if(testHost.fail===params.layer)throw Error('HTTP 503');
@@ -21,7 +21,22 @@ const variation=Math.sin(lat*.14)*8+Math.cos(lon*.15)*8+(params.product==='gfs'?
 return [params.layer==='gh'?(560+variation)*10:273.15+variation,0,0];
 });}destroy(){}}
 const tiles={get:async()=>({value:{valid:true}}),free:()=>testHost.freed++};
-window.W={map:{map},store,broadcast,products,renderUtils,tileInterpolator:{TileLayerInterpolator},tileLayerSource:{tileLayerSource:tiles},tileHelpers:{applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])}};
+async function fetchImageBlob(url){
+ const parts=url.split('/'),field=parts[2],z=Number(parts.at(-3)),tx=Number(parts.at(-2)),ty=Number(parts.at(-1));
+ if(testHost.delay)await new Promise(r=>setTimeout(r,testHost.delay));
+ if(testHost.fail===field)throw Error('HTTP 503');
+ const c=document.createElement('canvas');c.width=257;c.height=257;
+ const ctx=c.getContext('2d'),im=ctx.createImageData(257,257);
+ for(let y=0;y<257;y++)for(let x=0;x<257;x++){const i=(y*257+x)*4;
+ im.data[i]=Math.round(((tx+x/256)+(ty+y/256))/(2*2**z)*220)+(parts[1]==='gfs'?15:0);im.data[i+1]=field==='gh'?1:2;im.data[i+3]=255;}
+ ctx.putImageData(im,0,0);return await new Promise(resolve=>c.toBlob(resolve));
+}
+async function extractTileHeader(image){
+ const c=document.createElement('canvas');c.width=c.height=1;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);
+ const gh=ctx.getImageData(0,0,1,1).data[1]===1;
+ return {image,header:{decoderRmin:gh?5400:250,decoderRstep:gh?2:.2}};
+}
+window.W={map:{map},store,broadcast,products,renderUtils,tileInterpolator:{TileLayerInterpolator},tileLayerSource:{tileLayerSource:tiles,fetchImageBlob,extractTileHeader},tileHelpers:{applyUrlTemplate:(s,p)=>s.replace(/<([zxy])>/g,(_,k)=>p[k])}};
 for(const name of ['pointerdown','touchstart','click'])document.querySelector('#bottom-wrapper').addEventListener(name,event=>{testHost.hostInputs++;event.preventDefault();},{passive:false});const mod=await import('/plugin.js');
 if(mod.__pluginConfig.name!=='windy-plugin-synoptic-atlas')throw Error('Wrong plugin identity: '+mod.__pluginConfig.name);
 window.testPlugin=new mod.default({target:document.querySelector('#plugin')});
